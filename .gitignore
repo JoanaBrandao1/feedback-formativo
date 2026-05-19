@@ -216,3 +216,35 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# API keys e variáveis de ambiente
+.env
+.env.*
+
+# Dados brutos e processados (opcional)
+data/raw/*
+data/processed/*
+
+# Manter a estrutura das pastas
+!data/raw/.gitkeep
+!data/processed/.gitkeep
+
+# Resultados gerados
+outputs/
+
+# Modelos treinados
+models/
+
+# Arquivos grandes
+*.csv
+*.xlsx
+*.parquet
+*.pkl
+*.joblib
+
+# VS Code
+.vscode/
+
+# Sistema operacional
+.DS_Store
+Thumbs.db
