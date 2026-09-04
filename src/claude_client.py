@@ -1,21 +1,15 @@
-import os
-
-from dotenv import load_dotenv
 from anthropic import Anthropic
 
-load_dotenv()
+from src.config import obter_chave_api
 
-api_key = os.getenv("CLAUDE_API_KEY")
-
-if not api_key:
-    raise ValueError("CLAUDE_API_KEY não encontrada no arquivo .env")
-
-client = Anthropic(api_key=api_key)
+client = Anthropic(api_key=obter_chave_api("CLAUDE_API_KEY"))
 
 MODEL = "claude-sonnet-5"
 
 
 def gerar_resposta(prompt: str) -> str:
+    # Nota: `temperature` é rejeitado pela API para o claude-sonnet-5 ("deprecated for
+    # this model") — o modelo não aceita mais esse controle manual de aleatoriedade.
     response = client.messages.create(
         model=MODEL,
         max_tokens=1024,

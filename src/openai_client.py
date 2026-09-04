@@ -1,22 +1,17 @@
-import os
-
-from dotenv import load_dotenv
 from openai import OpenAI
 
-load_dotenv()
+from src.config import obter_chave_api
 
-api_key = os.getenv("OPENAI_API_KEY")
-
-if not api_key:
-    raise ValueError("OPENAI_API_KEY não encontrada no arquivo .env")
-
-client = OpenAI(api_key=api_key)
+client = OpenAI(api_key=obter_chave_api("OPENAI_API_KEY"))
 
 MODEL = "gpt-4o-mini"
+
 
 def gerar_resposta(prompt: str) -> str:
     response = client.chat.completions.create(
         model=MODEL,
+        temperature=0,  # tarefa de classificação: queremos a resposta mais provável, não variedade
+        response_format={"type": "json_object"},  # força o modelo a responder só com JSON válido
         messages=[{"role": "user", "content": prompt}],
     )
     return response.choices[0].message.content

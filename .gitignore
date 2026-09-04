@@ -221,13 +221,11 @@ __marimo__/
 .env
 .env.*
 
-# Dados brutos e processados (opcional)
-data/raw/*
-data/processed/*
-
-# Manter a estrutura das pastas
-!data/raw/.gitkeep
-!data/processed/.gitkeep
+# Resultados de teste/rascunho e backups de rodadas antigas (não fazem
+# parte da comparação oficial) — data/raw/dataset.csv e
+# data/processed/respostas_<modelo>.csv ficam versionados de propósito
+data/processed/*_teste.csv
+data/processed/*_prompt_antigo.csv
 
 # Resultados gerados
 outputs/
@@ -236,7 +234,6 @@ outputs/
 models/
 
 # Arquivos grandes
-*.csv
 *.xlsx
 *.parquet
 *.pkl

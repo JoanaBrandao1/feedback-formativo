@@ -1,19 +1,18 @@
-import os
-
-from dotenv import load_dotenv
 from google import genai
+from google.genai import types
 
-load_dotenv()
+from src.config import obter_chave_api
 
-api_key = os.getenv("GEMINI_API_KEY")
-
-if not api_key:
-    raise ValueError("GEMINI_API_KEY não encontrada no arquivo .env")
-
-client = genai.Client(api_key=api_key)
+client = genai.Client(api_key=obter_chave_api("GEMINI_API_KEY"))
 
 MODEL = "gemini-3.1-flash-lite"
 
+CONFIG = types.GenerateContentConfig(
+    temperature=0,  # tarefa de classificação: queremos a resposta mais provável, não variedade
+    response_mime_type="application/json",  # força o modelo a responder só com JSON válido
+)
+
+
 def gerar_resposta(prompt: str) -> str:
-    response = client.models.generate_content(model=MODEL, contents=prompt)
+    response = client.models.generate_content(model=MODEL, contents=prompt, config=CONFIG)
     return response.text
