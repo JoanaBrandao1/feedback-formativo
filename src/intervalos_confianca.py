@@ -1,18 +1,3 @@
-"""Intervalos de confiança de 95% por bootstrap para F1, MCC e Kappa.
-
-A ideia: o gabarito tem só 1000 feedbacks (e categorias como GP2 e GP4 têm
-pouquíssimos positivos), então uma métrica calculada uma vez é uma estimativa
-incerta. O bootstrap sorteia 1000 feedbacks COM reposição, recalcula a métrica
-nessa "amostra alternativa", repete isso N_BOOTSTRAP vezes e usa os percentis
-2,5% e 97,5% das métricas obtidas como intervalo (método do percentil).
-
-Só numpy e scikit-learn: o sklearn calcula a estimativa pontual (a mesma da
-tabela do app, via `calcular_metricas`); o numpy refaz F1/MCC/Kappa a partir das
-contagens VP/FP/FN/VN de cada reamostragem, o que é bem mais rápido que chamar
-o sklearn 1000 vezes por célula. As convenções para casos indefinidos são as
-mesmas de `calcular_metricas` (0, em vez de erro).
-"""
-
 import numpy as np
 import pandas as pd
 
@@ -26,18 +11,12 @@ METRICAS_COM_IC = ["f1", "mcc", "kappa"]
 
 
 def _dividir(numerador: np.ndarray, denominador: np.ndarray) -> np.ndarray:
-    """Divisão que devolve 0 onde o denominador é 0 (convenção usada no projeto)."""
     resultado = np.zeros_like(numerador, dtype=float)
     np.divide(numerador, denominador, out=resultado, where=denominador != 0)
     return resultado
 
 
 def metricas_das_contagens(vp, fp, fn, vn) -> dict[str, np.ndarray]:
-    """F1, MCC e Kappa a partir das contagens da matriz de confusão (vetores numpy).
-
-    Mesmas fórmulas e mesmas convenções do sklearn/`calcular_metricas`:
-    F1, MCC e Kappa indefinidos valem 0.
-    """
     vp, fp, fn, vn = (np.asarray(x, dtype=float) for x in (vp, fp, fn, vn))
     total = vp + fp + fn + vn
 
@@ -56,7 +35,6 @@ def metricas_das_contagens(vp, fp, fn, vn) -> dict[str, np.ndarray]:
 def bootstrap_metricas(
     y_real: np.ndarray, y_previsto: np.ndarray, rng: np.random.Generator, n_bootstrap: int = N_BOOTSTRAP
 ) -> dict[str, np.ndarray]:
-    """Distribuição bootstrap (n_bootstrap valores) de F1, MCC e Kappa."""
     n = len(y_real)
     indices = rng.integers(0, n, size=(n_bootstrap, n))
     real = y_real[indices]
@@ -76,16 +54,6 @@ def calcular_ic95(
     n_bootstrap: int = N_BOOTSTRAP,
     semente: int = SEMENTE,
 ) -> pd.DataFrame:
-    """IC95% de F1, MCC e Kappa de um modelo, em todas as categorias.
-
-    Devolve formato "longo": uma linha por (categoria, métrica). Em categorias
-    sem nenhum positivo no gabarito (ex.: GP7) a métrica não está definida, então
-    estimativa e IC ficam vazios (NaN) com uma observação explicando.
-
-    A semente depende só da categoria: modelos com as mesmas linhas válidas
-    usam exatamente as mesmas reamostragens (bootstrap pareado), o que deixa a
-    comparação entre modelos mais justa.
-    """
     pontuais = calcular_metricas(df_previsto, df_verdadeiro).set_index("categoria")
     comparacao = df_verdadeiro[["ID", *CATEGORIAS]].merge(
         df_previsto[["ID", *CATEGORIAS]], on="ID", suffixes=("_real", "_previsto")
@@ -136,22 +104,10 @@ def calcular_ic95(
     return pd.DataFrame(linhas)
 
 
-# --------------------------------------------------------------------------
-# Intervalo de confiança da DIFERENÇA entre duas classificações (bootstrap pareado)
-# --------------------------------------------------------------------------
-#
-# Os intervalos acima são de cada modelo separado. Para dizer se A é melhor que B,
-# o que interessa é o intervalo da diferença A − B. No bootstrap pareado, cada
-# reamostragem sorteia UM conjunto de feedbacks e calcula a métrica de A e de B
-# nesses mesmos feedbacks; a diferença é tirada dentro de cada reamostragem. Como
-# o mesmo sorteio vale para todas as categorias, também dá para calcular a
-# diferença na média GP1–GP6 em cada reamostragem.
-
 ROTULO_MEDIA = "Média"
 
 
 def _contagens(real: np.ndarray, previsto: np.ndarray):
-    """VP, FP, FN e VN somando ao longo do último eixo (arrays de 0/1)."""
     vp = (real & previsto).sum(axis=-1)
     fp = ((1 - real) & previsto).sum(axis=-1)
     fn = (real & (1 - previsto)).sum(axis=-1)
@@ -167,13 +123,6 @@ def diferenca_pareada(
     n_bootstrap: int = N_BOOTSTRAP,
     semente: int = SEMENTE,
 ) -> pd.DataFrame:
-    """IC95% pareado de A − B para F1, MCC e Kappa, por categoria e na média das categorias.
-
-    Usa só os IDs presentes no gabarito, em A e em B, e sem valor faltando em
-    nenhuma das categorias pedidas (assim A e B são comparados exatamente nos
-    mesmos feedbacks). As convenções de casos indefinidos são as de
-    `calcular_metricas` (0).
-    """
     base = (
         df_verdadeiro[["ID", *categorias]]
         .merge(df_a[["ID", *categorias]], on="ID", suffixes=("", "_a"))
@@ -181,16 +130,16 @@ def diferenca_pareada(
         .dropna()
     )
     n = len(base)
-    real = base[categorias].to_numpy(dtype=np.int8).T  # (categorias, n); int8 economiza memória
+    real = base[categorias].to_numpy(dtype=np.int8).T
     prev_a = base[[f"{c}_a" for c in categorias]].to_numpy(dtype=np.int8).T
     prev_b = base[[f"{c}_b" for c in categorias]].to_numpy(dtype=np.int8).T
 
     rng = np.random.default_rng(semente)
-    indices = rng.integers(0, n, size=(n_bootstrap, n))  # o mesmo sorteio para A, B e todas as categorias
+    indices = rng.integers(0, n, size=(n_bootstrap, n))
 
-    pontual_a = metricas_das_contagens(*_contagens(real, prev_a))  # cada métrica: (categorias,)
+    pontual_a = metricas_das_contagens(*_contagens(real, prev_a))
     pontual_b = metricas_das_contagens(*_contagens(real, prev_b))
-    boot_a = metricas_das_contagens(*_contagens(real[:, indices], prev_a[:, indices]))  # (categorias, n_bootstrap)
+    boot_a = metricas_das_contagens(*_contagens(real[:, indices], prev_a[:, indices]))
     boot_b = metricas_das_contagens(*_contagens(real[:, indices], prev_b[:, indices]))
 
     margem = (100 - NIVEL_CONFIANCA) / 2

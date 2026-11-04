@@ -99,21 +99,6 @@ DESCRICOES_CATEGORIAS = {
 }
 
 
-# --------------------------------------------------------------------------
-# Prompt REVISADO (experimento complementar, exploratório)
-# --------------------------------------------------------------------------
-# O prompt original (acima) segue o guia de anotação ao pé da letra. Nas
-# categorias GP1 e GP6, porém, os anotadores aplicaram o guia de outro jeito:
-#   - GP1 foi marcado quando o feedback avalia o trabalho em relação à proposta
-#     ou às exigências da atividade, e NÃO quando só sugere o que poderia ter
-#     sido explorado (o próprio exemplo de GP1 do guia, "Alvaraz y Soler", tem
-#     GP1 = 0 no gabarito);
-#   - GP6 foi marcado também quando o feedback só aponta erros ou o que faltou,
-#     mesmo sem dizer explicitamente o próximo passo.
-# Esta versão muda SÓ GP1 e GP6 (definição e exemplos). Os exemplos novos são
-# feedbacks reais do conjunto de DESENVOLVIMENTO (data/splits/dev_ids.csv); nada
-# do conjunto de teste foi usado para escrevê-la. Detalhes: docs/prompt_revisado.md.
-
 IDS_EXEMPLOS_REVISADO = {
     "GP1": {"positivo": 13279, "negativo": 1119},
     "GP6": {"positivo": 1473, "negativo": 45},
@@ -161,8 +146,6 @@ VERSOES_PROMPT = {
 
 
 def montar_prompt(texto: str, versao: str = "original") -> str:
-    """Monta o prompt de classificação. `versao="original"` (padrão) é o prompt
-    usado no experimento principal; `"revisado"` é o do experimento complementar."""
     if versao not in VERSOES_PROMPT:
         raise ValueError(f"versão de prompt desconhecida: {versao!r} (use {list(VERSOES_PROMPT)})")
     blocos = []
@@ -194,14 +177,7 @@ Responda APENAS em JSON válido, sem texto adicional antes ou depois, no formato
 
 
 def parse_resposta(resposta: str) -> dict[str, int | None]:
-    """Extrai os valores 0/1 de cada categoria GP a partir da resposta do modelo.
-
-    Tenta primeiro interpretar como JSON (formato esperado). Se falhar,
-    usa regex como fallback. Retorna None para uma categoria quando o
-    modelo não respondeu no formato esperado.
-    """
     texto = resposta.strip()
-    # remove possíveis fences de markdown (```json ... ```)
     texto = re.sub(r"^```(?:json)?\s*|\s*```$", "", texto, flags=re.MULTILINE).strip()
 
     try:
@@ -217,7 +193,6 @@ def parse_resposta(resposta: str) -> dict[str, int | None]:
     except (json.JSONDecodeError, TypeError):
         pass
 
-    # Fallback: regex sobre o texto bruto da resposta
     valores: dict[str, int | None] = {}
     for categoria in CATEGORIAS:
         match = re.search(rf'"?{categoria}"?\s*:\s*([01])', resposta)
@@ -226,7 +201,6 @@ def parse_resposta(resposta: str) -> dict[str, int | None]:
 
 
 if __name__ == "__main__":
-    # Exemplo rápido de uso
     exemplo = (
         "Bom trabalho, mas vocês deveriam ter explorado os princípios de Alvaraz y Soler "
         "e os relacionados com as observações realizadas. Que tal comparar sua resposta "

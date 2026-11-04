@@ -1,25 +1,3 @@
-"""
-Coleta classificações dos modelos (Claude, Gemini, OpenAI) para as categorias
-GP1-GP7 e salva os resultados em data/processed/.
-
-Se um resultado parcial já existir (de uma execução anterior ou interrompida),
-os IDs já processados são pulados — só continua de onde parou.
-
-Uso (experimento principal, prompt original):
-    python scripts/gerar_respostas.py            # dataset completo
-    python scripts/gerar_respostas.py --n 10      # só as 10 primeiras linhas,
-                                                   # salva em respostas_<modelo>_teste.csv
-                                                   # (não mexe nos resultados da rodada completa)
-
-Uso (experimento complementar, prompt revisado, só no conjunto de teste):
-    python scripts/gerar_respostas.py --prompt revisado --ids data/splits/teste_ids.csv --plano
-    python scripts/gerar_respostas.py --prompt revisado --ids data/splits/teste_ids.csv --modelo gemini
-    → salva em respostas_<modelo>_revisado.csv
-
---plano só mostra quantas chamadas seriam feitas, o custo estimado e o arquivo
-de saída: NÃO chama nenhuma API.
-"""
-
 import argparse
 import importlib
 import sys
@@ -36,24 +14,19 @@ from src.prompts import CATEGORIAS, VERSOES_PROMPT, montar_prompt, parse_respost
 
 CAMINHO_DATASET = RAIZ / "data" / "raw" / "dataset.csv"
 PASTA_SAIDA = RAIZ / "data" / "processed"
-TENTATIVAS_POR_LINHA = 3  # tentativas antes de desistir de uma linha (erros de rede/rate limit são passageiros)
+TENTATIVAS_POR_LINHA = 3
 
-# --- Estimativa de custo do --plano (só informativa) -----------------------
-# Preços de referência em US$ por milhão de tokens (entrada, saída). CONFIRA nas
-# páginas de preço de cada empresa antes de rodar; os valores mudam.
 PRECOS_REFERENCIA = {
-    "claude": (2.00, 10.00),   # claude-sonnet-5 (mesmo valor usado em teste_consistencia.py)
-    "gemini": (0.10, 0.40),    # gemini-3.1-flash-lite (estimativa; confira)
-    "openai": (0.15, 0.60),    # gpt-4o-mini
+    "claude": (2.00, 10.00),
+    "gemini": (0.10, 0.40),
+    "openai": (0.15, 0.60),
 }
-CARACTERES_POR_TOKEN = 3.3  # português; valor baixo de propósito (superestima tokens)
-TOKENS_SAIDA_POR_CHAMADA = 50  # o JSON de resposta tem ~35-45 tokens
-SEGUNDOS_POR_CHAMADA = 4  # ~3 s de resposta + 1 s de pausa entre chamadas
+CARACTERES_POR_TOKEN = 3.3
+TOKENS_SAIDA_POR_CHAMADA = 50
+SEGUNDOS_POR_CHAMADA = 4
 
 
 def carregar_modelos(ids_modelos: list[str]) -> dict:
-    """Importa o cliente de cada modelo separadamente, para permitir rodar só
-    com as chaves de API que estiverem configuradas no .env."""
     modelos = {}
     for id_modelo in ids_modelos:
         info = MODELOS[id_modelo]
@@ -98,11 +71,10 @@ def avaliar_modelo(
         linha.to_csv(caminho_saida, mode="a", header=not caminho_saida.exists(), index=False)
 
         print(f"  [{nome_modelo}] ID {row.ID} processado ({i}/{len(pendentes)})")
-        time.sleep(1)  # evita estourar limite de requisições por segundo
+        time.sleep(1)
 
 
 def mostrar_plano(id_modelo: str, df: pd.DataFrame, caminho_saida: Path, versao_prompt: str) -> None:
-    """Mostra o que seria feito para um modelo, sem chamar a API."""
     ja_processados = set(pd.read_csv(caminho_saida)["ID"]) if caminho_saida.exists() else set()
     pendentes = df[~df["ID"].isin(ja_processados)]
     caracteres = sum(len(montar_prompt(texto, versao_prompt)) for texto in pendentes["Text"])
@@ -182,7 +154,7 @@ def main():
     for nome_modelo, cliente in modelos.items():
         caminho_saida = PASTA_SAIDA / f"respostas_{nome_modelo}{sufixo}.csv"
         if args.n and caminho_saida.exists():
-            caminho_saida.unlink()  # teste sempre roda do zero, pra refletir o prompt atual
+            caminho_saida.unlink()
 
         if args.n:
             descricao = f"{len(df)} feedbacks de teste"

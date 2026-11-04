@@ -1,25 +1,3 @@
-"""
-Divide os 1000 feedbacks em DESENVOLVIMENTO (200) e TESTE (800), uma única vez,
-para o experimento complementar do prompt revisado.
-
-Por que dividir: o prompt revisado é escrito olhando feedbacks reais. Se ele
-fosse avaliado nos mesmos feedbacks usados para escrevê-lo, o resultado sairia
-otimista demais. Então:
-  - desenvolvimento (200): os ÚNICOS feedbacks que podem ser lidos para revisar o prompt;
-  - teste (800): onde os dois prompts (original e revisado) são comparados.
-
-Estratificação: cada feedback é colocado no "estrato" da sua boa prática mais
-rara (GP4, depois GP2, GP1...), ou em "nenhuma" se não tiver nenhuma. Dentro de
-cada estrato, 20% vão para desenvolvimento. Assim, mesmo as boas práticas raras
-(GP4 tem só 13 positivos) aparecem nas duas partes.
-
-Não chama nenhuma API. Se os arquivos já existirem, NÃO sobrescreve (a divisão
-precisa ser fixa): apaga-los é uma decisão consciente.
-
-Uso:
-    python scripts/dividir_dados.py
-"""
-
 import sys
 from pathlib import Path
 
@@ -53,7 +31,6 @@ def dividir(df: pd.DataFrame, n_dev: int = N_DEV, semente: int = SEMENTE) -> tup
     estratos = df.apply(estrato, axis=1)
     rng = np.random.default_rng(semente)
 
-    # quantos de cada estrato vão para dev (maiores restos, para somar exatamente n_dev)
     tamanhos = estratos.value_counts().sort_index()
     cota = tamanhos * n_dev / len(df)
     n_por_estrato = np.floor(cota).astype(int)

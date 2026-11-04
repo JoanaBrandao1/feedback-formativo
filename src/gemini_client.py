@@ -8,8 +8,8 @@ client = genai.Client(api_key=obter_chave_api("GEMINI_API_KEY"))
 MODEL = "gemini-3.1-flash-lite"
 
 CONFIG = types.GenerateContentConfig(
-    temperature=0,  # tarefa de classificação: queremos a resposta mais provável, não variedade
-    response_mime_type="application/json",  # força o modelo a responder só com JSON válido
+    temperature=0,
+    response_mime_type="application/json",
 )
 
 

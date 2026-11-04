@@ -1,15 +1,3 @@
-"""
-Calcula o intervalo de confiança de 95% (bootstrap, 1000 reamostragens, semente
-fixa) de F1, MCC e Kappa de cada modelo em cada categoria, a partir dos CSVs
-que JÁ existem em data/processed/ (respostas_<modelo>.csv).
-
-Não chama nenhuma API e não altera nenhum arquivo existente: escreve só
-data/processed/metricas_ic95.csv (que o app lê para mostrar os intervalos).
-
-Uso:
-    python scripts/calcular_ic95.py
-"""
-
 import sys
 from pathlib import Path
 

@@ -1,22 +1,3 @@
-"""
-Experimento complementar: compara o prompt ORIGINAL com o REVISADO, só nos
-800 feedbacks do conjunto de TESTE (data/splits/teste_ids.csv).
-
-- Prompt original: NÃO precisa rodar de novo; usa os respostas_<modelo>.csv da
-  rodada completa, filtrados pelos IDs de teste.
-- Prompt revisado: usa os respostas_<modelo>_revisado.csv (gerados com
-  `gerar_respostas.py --prompt revisado --ids data/splits/teste_ids.csv`).
-
-Para cada modelo com as duas versões, calcula F1, MCC e Kappa por boa prática
-e na média, e o IC 95% pareado da diferença revisado − original (mesmos
-feedbacks nas duas versões). Não chama nenhuma API.
-
-Saída: data/processed/comparacao_prompts.csv
-
-Uso:
-    python scripts/comparar_prompts.py
-"""
-
 import sys
 from pathlib import Path
 

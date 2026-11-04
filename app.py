@@ -1,11 +1,3 @@
-"""
-App de comparação de métricas entre os modelos (Claude, Gemini, OpenAI) na
-tarefa de classificar feedbacks educacionais nas categorias GP1-GP7.
-
-Uso:
-    streamlit run app.py
-"""
-
 from pathlib import Path
 
 import altair as alt
@@ -26,10 +18,10 @@ from src.prompts import CATEGORIAS, DESCRICOES_CATEGORIAS
 RAIZ = Path(__file__).resolve().parent
 CAMINHO_DATASET = RAIZ / "data" / "raw" / "dataset.csv"
 PASTA_PROCESSADOS = RAIZ / "data" / "processed"
-CAMINHO_IC95 = PASTA_PROCESSADOS / "metricas_ic95.csv"  # gerado por scripts/calcular_ic95.py
-CAMINHO_CONSISTENCIA = PASTA_PROCESSADOS / "consistencia_claude_resumo.csv"  # gerado por scripts/teste_consistencia.py
-CAMINHO_DIFERENCAS = PASTA_PROCESSADOS / "diferencas_ic95.csv"  # gerado por scripts/calcular_ic95_diferencas.py
-CAMINHO_COMPARACAO_PROMPTS = PASTA_PROCESSADOS / "comparacao_prompts.csv"  # gerado por scripts/comparar_prompts.py
+CAMINHO_IC95 = PASTA_PROCESSADOS / "metricas_ic95.csv"
+CAMINHO_CONSISTENCIA = PASTA_PROCESSADOS / "consistencia_claude_resumo.csv"
+CAMINHO_DIFERENCAS = PASTA_PROCESSADOS / "diferencas_ic95.csv"
+CAMINHO_COMPARACAO_PROMPTS = PASTA_PROCESSADOS / "comparacao_prompts.csv"
 
 NOMES_COLUNAS = {
     "modelo": "Modelo",
@@ -45,19 +37,12 @@ NOMES_COLUNAS = {
     "n_positivos_previstos": "Nº de positivos previstos pelo modelo",
 }
 
-# f1/acuracia/precisao/recall vão de 0 a 1 (viram "nota" de 0 a 10 no gráfico);
-# mcc/kappa vão de -1 a 1 (0 = concordância ao acaso), então o gráfico exibe o
-# valor bruto em vez de uma "nota".
 METRICAS_0_A_1 = ["f1", "acuracia", "precisao", "recall"]
 METRICAS_MENOS1_A_1 = ["mcc", "kappa"]
 METRICAS_COM_IC = ["f1", "mcc", "kappa"]
 
-# Abaixo disso, o gabarito tem tão poucos positivos que as métricas daquela
-# categoria são muito instáveis (intervalos de confiança largos).
 LIMITE_POUCOS_POSITIVOS = 50
 
-# No teste de consistência (amostra pequena), com menos positivos que isso em
-# ambas as execuções a concordância só reflete o "0" e não diz nada sobre a categoria.
 LIMITE_POUCOS_POSITIVOS_CONSISTENCIA = 5
 
 st.set_page_config(page_title="Comparação de modelos - Feedback Formativo", layout="wide")
@@ -88,7 +73,6 @@ def calcular_todas_metricas(respostas: dict[str, pd.DataFrame], df_gabarito: pd.
 
 
 def rotulo_categorias(categorias: list[str]) -> str:
-    """["GP1", ..., "GP6"] -> "GP1–GP6"; se não forem consecutivas, lista todas."""
     if not categorias:
         return ""
     numeros = [CATEGORIAS.index(c) for c in categorias]
@@ -103,8 +87,6 @@ def grafico_por_categoria(df_metricas: pd.DataFrame, metrica: str, modelos_dispo
     else:
         transform, dominio, titulo_eixo = f"datum.{metrica} * 10", [0, 10], f"{metrica.capitalize()} (0 a 10)"
 
-    # Categoria sem positivos no gabarito: a métrica não existe (N/A), então a
-    # barra some e o rótulo do eixo avisa, em vez de desenhar uma barra "0".
     df_grafico = df_metricas
     if metrica in METRICAS_SEM_POSITIVOS_INDEFINIDAS:
         df_grafico = marcar_nao_definidas(df_metricas)
@@ -148,7 +130,6 @@ def grafico_por_categoria(df_metricas: pd.DataFrame, metrica: str, modelos_dispo
 
 
 def grafico_ic95(df_ic: pd.DataFrame, metrica: str, modelos_disponiveis: list[str], cores_disponiveis: list[str]) -> alt.LayerChart:
-    """Barras com a estimativa + linha vertical com o IC de 95% (bootstrap)."""
     dados = df_ic[(df_ic["metrica"] == metrica) & df_ic["estimativa"].notna()]
     ordem = [c for c in CATEGORIAS if c in set(dados["categoria"])]
     dominio = [-1, 1] if metrica in METRICAS_MENOS1_A_1 else [0, 1]
@@ -255,7 +236,6 @@ def categorias_sem_positivos(df_metricas: pd.DataFrame) -> list[str]:
 
 
 def nota_sem_positivos(df_metricas: pd.DataFrame, sem_positivos: list[str]) -> str:
-    """Texto que explica por que algumas categorias aparecem como N/A."""
     partes = []
     for categoria in sem_positivos:
         previstos = df_metricas[df_metricas["categoria"] == categoria].set_index("modelo")["n_positivos_previstos"]
@@ -313,7 +293,6 @@ def secao_intervalos_confianca(modelos_disponiveis: list[str], cores_disponiveis
         "só ruído da amostra."
     )
 
-    # categorias com poucos positivos → intervalos largos
     por_categoria = (
         df_ic[df_ic["metrica"] == "f1"]
         .groupby("categoria")
@@ -362,8 +341,6 @@ def secao_intervalos_confianca(modelos_disponiveis: list[str], cores_disponiveis
 
 
 def tabela_diferencas(df_dif: pd.DataFrame, colunas_par: list[str], metrica: str) -> pd.DataFrame:
-    """Tabela "diferença [IC95%]" por categoria, para uma métrica, a partir de um
-    CSV gerado por `diferenca_pareada` (diferencas_ic95.csv ou comparacao_prompts.csv)."""
     dados = df_dif[df_dif["metrica"] == metrica].copy()
     dados["Diferença [IC 95%]"] = dados.apply(
         lambda l: f"{l['diferenca']:+.2f}  [{l['ic95_inferior']:+.2f} ; {l['ic95_superior']:+.2f}]", axis=1
@@ -400,7 +377,6 @@ def secao_diferencas(usar_teste: bool):
 
 
 def secao_comparacao_prompts():
-    """Experimento complementar: só aparece depois de rodar scripts/comparar_prompts.py."""
     if not CAMINHO_COMPARACAO_PROMPTS.exists():
         return
     st.subheader("Experimento complementar: prompt original × revisado (conjunto de teste)")

@@ -1,18 +1,3 @@
-"""
-Intervalo de confiança de 95% da DIFERENÇA entre cada par de modelos
-(bootstrap pareado, 1000 reamostragens, semente fixa), para F1, MCC e Kappa,
-em cada categoria com positivos no gabarito e na média dessas categorias.
-
-Responde à pergunta "um modelo é melhor que o outro?": se o intervalo da
-diferença contém 0, não há evidência de diferença entre os dois.
-
-Não chama nenhuma API e não altera nenhum arquivo existente: escreve só
-data/processed/diferencas_ic95.csv.
-
-Uso:
-    python scripts/calcular_ic95_diferencas.py
-"""
-
 import sys
 from itertools import combinations
 from pathlib import Path
@@ -33,7 +18,6 @@ CAMINHO_SAIDA = PASTA_PROCESSADOS / "diferencas_ic95.csv"
 
 def main():
     df_gabarito = pd.read_csv(CAMINHO_DATASET)
-    # GP7 não tem positivos no gabarito (métricas N/A), então fica de fora
     categorias = [c for c in CATEGORIAS if df_gabarito[c].sum() > 0]
 
     respostas = {}
