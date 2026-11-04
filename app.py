@@ -28,6 +28,8 @@ CAMINHO_DATASET = RAIZ / "data" / "raw" / "dataset.csv"
 PASTA_PROCESSADOS = RAIZ / "data" / "processed"
 CAMINHO_IC95 = PASTA_PROCESSADOS / "metricas_ic95.csv"  # gerado por scripts/calcular_ic95.py
 CAMINHO_CONSISTENCIA = PASTA_PROCESSADOS / "consistencia_claude_resumo.csv"  # gerado por scripts/teste_consistencia.py
+CAMINHO_DIFERENCAS = PASTA_PROCESSADOS / "diferencas_ic95.csv"  # gerado por scripts/calcular_ic95_diferencas.py
+CAMINHO_COMPARACAO_PROMPTS = PASTA_PROCESSADOS / "comparacao_prompts.csv"  # gerado por scripts/comparar_prompts.py
 
 NOMES_COLUNAS = {
     "modelo": "Modelo",
@@ -193,8 +195,8 @@ def secao_explicacoes():
         with st.expander("O que significa cada métrica (Acurácia, Precisão, Recall, F1, MCC, Kappa)"):
             st.markdown(
                 """
-Para cada categoria (ex.: GP1), a IA responde 0 ou 1 e comparamos com o que o
-professor marcou no gabarito. Isso dá 4 possibilidades: **VP** (verdadeiro
+Para cada categoria (ex.: GP1), a IA responde 0 ou 1 e comparamos com o que os
+especialistas marcaram no gabarito. Isso dá 4 possibilidades: **VP** (verdadeiro
 positivo: os dois marcaram 1), **VN** (verdadeiro negativo: os dois marcaram
 0), **FP** (falso positivo: a IA marcou 1, mas o gabarito era 0) e **FN**
 (falso negativo: a IA marcou 0, mas o gabarito era 1).
@@ -242,9 +244,7 @@ marcar a categoria algumas vezes, todas essas marcações são falsos positivos
 categoria, já que ela nunca está presente. A **Acurácia** continua aparecendo,
 mas fica enganosamente alta (perto de 1) só porque a IA marca "0" quase
 sempre — por isso ela vem com uma nota. Pelo mesmo motivo, o resumo geral usa
-só as categorias que têm positivos no gabarito; a média que inclui essas
-categorias (contando as métricas como 0) fica numa tabela à parte, só como
-referência.
+só as categorias que têm positivos no gabarito.
                 """
             )
 
@@ -277,15 +277,11 @@ def secao_tabelas(df_metricas: pd.DataFrame, modelos_disponiveis: list[str]):
     st.subheader(f"Resumo geral (média das categorias com positivos no gabarito: {rotulo_categorias(com_positivos)})")
     resumo = media_por_modelo(df_metricas, modelos_disponiveis).round(2)
     st.dataframe(resumo.rename(columns=NOMES_COLUNAS), width="stretch")
-
     if sem_positivos:
-        with st.expander(f"Média com {', '.join(sem_positivos)} (referência)"):
-            st.caption(
-                f"Média antiga, de todas as categorias, contando {', '.join(sem_positivos)} com precisão, recall, "
-                "F1, MCC e Kappa = 0. Não é comparável com a tabela acima e é mostrada só como referência."
-            )
-            resumo_com_todas = media_por_modelo(df_metricas, modelos_disponiveis, somente_com_positivos=False).round(2)
-            st.dataframe(resumo_com_todas.rename(columns=NOMES_COLUNAS), width="stretch")
+        st.caption(
+            f"{', '.join(sem_positivos)} fica fora da média: sem nenhum positivo no gabarito, as métricas dela não "
+            "estão definidas (N/A)."
+        )
 
     st.subheader("Métricas detalhadas por categoria")
     colunas = ["modelo", "categoria", *COLUNAS_METRICAS, "n_amostras", "n_positivos_gabarito", "n_positivos_previstos"]
@@ -363,6 +359,66 @@ def secao_intervalos_confianca(modelos_disponiveis: list[str], cores_disponiveis
         columns={**NOMES_COLUNAS, **{m: f"{NOMES_COLUNAS[m]} [IC 95%]" for m in METRICAS_COM_IC}}
     )
     st.dataframe(tabela, width="stretch", hide_index=True)
+
+
+def tabela_diferencas(df_dif: pd.DataFrame, colunas_par: list[str], metrica: str) -> pd.DataFrame:
+    """Tabela "diferença [IC95%]" por categoria, para uma métrica, a partir de um
+    CSV gerado por `diferenca_pareada` (diferencas_ic95.csv ou comparacao_prompts.csv)."""
+    dados = df_dif[df_dif["metrica"] == metrica].copy()
+    dados["Diferença [IC 95%]"] = dados.apply(
+        lambda l: f"{l['diferenca']:+.2f}  [{l['ic95_inferior']:+.2f} ; {l['ic95_superior']:+.2f}]", axis=1
+    )
+    dados["Conclusão"] = dados["ic_exclui_zero"].map(
+        lambda exclui: "diferença" if exclui else "sem evidência de diferença"
+    )
+    ordem = [*CATEGORIAS, "Média"]
+    dados["categoria"] = pd.Categorical(dados["categoria"], categories=ordem, ordered=True)
+    dados = dados.sort_values([*colunas_par, "categoria"])
+    return dados[[*colunas_par, "categoria", "valor_a", "valor_b", "Diferença [IC 95%]", "Conclusão"]]
+
+
+def secao_diferencas(usar_teste: bool):
+    st.subheader("Um modelo é melhor que o outro? (IC 95% da diferença)")
+    if usar_teste:
+        st.info("Disponível só para a rodada completa. Desmarque \"Usar resultados de teste\".")
+        return
+    if not CAMINHO_DIFERENCAS.exists():
+        st.info("Ainda não calculado. Gere (sem chamar nenhuma API) com:\n\n```\npython scripts/calcular_ic95_diferencas.py\n```")
+        return
+
+    df_dif = pd.read_csv(CAMINHO_DIFERENCAS)
+    st.caption(
+        "Bootstrap pareado: em cada uma das reamostragens, os dois modelos são avaliados nos MESMOS feedbacks "
+        "sorteados e a diferença (modelo A − modelo B) é calculada ali. **Se o intervalo contém 0, não há "
+        "evidência de diferença entre os dois modelos.** A linha \"Média\" é a média de GP1–GP6."
+    )
+    metrica = st.selectbox("Métrica", METRICAS_COM_IC, format_func=lambda m: NOMES_COLUNAS[m], key="metrica_dif")
+    tabela = tabela_diferencas(df_dif, ["modelo_a", "modelo_b"], metrica).rename(
+        columns={"modelo_a": "Modelo A", "modelo_b": "Modelo B", "categoria": "Categoria", "valor_a": "A", "valor_b": "B"}
+    )
+    st.dataframe(tabela.style.format({"A": "{:.2f}", "B": "{:.2f}"}), width="stretch", hide_index=True)
+
+
+def secao_comparacao_prompts():
+    """Experimento complementar: só aparece depois de rodar scripts/comparar_prompts.py."""
+    if not CAMINHO_COMPARACAO_PROMPTS.exists():
+        return
+    st.subheader("Experimento complementar: prompt original × revisado (conjunto de teste)")
+    df_comp = pd.read_csv(CAMINHO_COMPARACAO_PROMPTS).rename(
+        columns={"valor_revisado": "valor_a", "valor_original": "valor_b"}
+    )
+    st.caption(
+        f"Exploratório. O prompt revisado muda só a definição e os exemplos de GP1 e GP6, escritos olhando apenas "
+        f"os feedbacks de desenvolvimento; a comparação usa os {int(df_comp['n_amostras'].max())} feedbacks de teste, "
+        "nos quais nenhum dos dois prompts foi ajustado. Diferença = revisado − original (bootstrap pareado). "
+        "Se o intervalo contém 0, não há evidência de que a revisão mudou o desempenho."
+    )
+    metrica = st.selectbox("Métrica", METRICAS_COM_IC, format_func=lambda m: NOMES_COLUNAS[m], key="metrica_prompts")
+    tabela = tabela_diferencas(df_comp, ["modelo"], metrica).rename(
+        columns={"modelo": "Modelo", "categoria": "Categoria", "valor_a": "Revisado", "valor_b": "Original"}
+    )
+    tabela = tabela[["Modelo", "Categoria", "Original", "Revisado", "Diferença [IC 95%]", "Conclusão"]]
+    st.dataframe(tabela.style.format({"Original": "{:.2f}", "Revisado": "{:.2f}"}), width="stretch", hide_index=True)
 
 
 def secao_qualidade_respostas(respostas: dict[str, pd.DataFrame]):
@@ -536,8 +592,10 @@ def main():
     secao_explicacoes()
     secao_tabelas(df_metricas, modelos_disponiveis)
     secao_intervalos_confianca(modelos_disponiveis, cores_disponiveis, usar_teste)
+    secao_diferencas(usar_teste)
     secao_qualidade_respostas(respostas)
     secao_consistencia()
+    secao_comparacao_prompts()
     secao_respostas_por_modelo(df_gabarito, respostas)
 
 

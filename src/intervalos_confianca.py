@@ -134,3 +134,92 @@ def calcular_ic95(
             )
 
     return pd.DataFrame(linhas)
+
+
+# --------------------------------------------------------------------------
+# Intervalo de confiança da DIFERENÇA entre duas classificações (bootstrap pareado)
+# --------------------------------------------------------------------------
+#
+# Os intervalos acima são de cada modelo separado. Para dizer se A é melhor que B,
+# o que interessa é o intervalo da diferença A − B. No bootstrap pareado, cada
+# reamostragem sorteia UM conjunto de feedbacks e calcula a métrica de A e de B
+# nesses mesmos feedbacks; a diferença é tirada dentro de cada reamostragem. Como
+# o mesmo sorteio vale para todas as categorias, também dá para calcular a
+# diferença na média GP1–GP6 em cada reamostragem.
+
+ROTULO_MEDIA = "Média"
+
+
+def _contagens(real: np.ndarray, previsto: np.ndarray):
+    """VP, FP, FN e VN somando ao longo do último eixo (arrays de 0/1)."""
+    vp = (real & previsto).sum(axis=-1)
+    fp = ((1 - real) & previsto).sum(axis=-1)
+    fn = (real & (1 - previsto)).sum(axis=-1)
+    vn = real.shape[-1] - vp - fp - fn
+    return vp, fp, fn, vn
+
+
+def diferenca_pareada(
+    df_verdadeiro: pd.DataFrame,
+    df_a: pd.DataFrame,
+    df_b: pd.DataFrame,
+    categorias: list[str],
+    n_bootstrap: int = N_BOOTSTRAP,
+    semente: int = SEMENTE,
+) -> pd.DataFrame:
+    """IC95% pareado de A − B para F1, MCC e Kappa, por categoria e na média das categorias.
+
+    Usa só os IDs presentes no gabarito, em A e em B, e sem valor faltando em
+    nenhuma das categorias pedidas (assim A e B são comparados exatamente nos
+    mesmos feedbacks). As convenções de casos indefinidos são as de
+    `calcular_metricas` (0).
+    """
+    base = (
+        df_verdadeiro[["ID", *categorias]]
+        .merge(df_a[["ID", *categorias]], on="ID", suffixes=("", "_a"))
+        .merge(df_b[["ID", *categorias]].rename(columns={c: f"{c}_b" for c in categorias}), on="ID")
+        .dropna()
+    )
+    n = len(base)
+    real = base[categorias].to_numpy(dtype=np.int8).T  # (categorias, n); int8 economiza memória
+    prev_a = base[[f"{c}_a" for c in categorias]].to_numpy(dtype=np.int8).T
+    prev_b = base[[f"{c}_b" for c in categorias]].to_numpy(dtype=np.int8).T
+
+    rng = np.random.default_rng(semente)
+    indices = rng.integers(0, n, size=(n_bootstrap, n))  # o mesmo sorteio para A, B e todas as categorias
+
+    pontual_a = metricas_das_contagens(*_contagens(real, prev_a))  # cada métrica: (categorias,)
+    pontual_b = metricas_das_contagens(*_contagens(real, prev_b))
+    boot_a = metricas_das_contagens(*_contagens(real[:, indices], prev_a[:, indices]))  # (categorias, n_bootstrap)
+    boot_b = metricas_das_contagens(*_contagens(real[:, indices], prev_b[:, indices]))
+
+    margem = (100 - NIVEL_CONFIANCA) / 2
+    linhas = []
+    for metrica in METRICAS_COM_IC:
+        estimativas = list(pontual_a[metrica] - pontual_b[metrica]) + [
+            float(np.mean(pontual_a[metrica]) - np.mean(pontual_b[metrica]))
+        ]
+        distribuicoes = list(boot_a[metrica] - boot_b[metrica]) + [
+            boot_a[metrica].mean(axis=0) - boot_b[metrica].mean(axis=0)
+        ]
+        nomes = [*categorias, ROTULO_MEDIA]
+        valores_a = list(pontual_a[metrica]) + [float(np.mean(pontual_a[metrica]))]
+        valores_b = list(pontual_b[metrica]) + [float(np.mean(pontual_b[metrica]))]
+        for categoria, estimativa, distribuicao, valor_a, valor_b in zip(nomes, estimativas, distribuicoes, valores_a, valores_b):
+            inferior, superior = (float(v) for v in np.percentile(distribuicao, [margem, 100 - margem]))
+            linhas.append(
+                {
+                    "categoria": categoria,
+                    "metrica": metrica,
+                    "valor_a": float(valor_a),
+                    "valor_b": float(valor_b),
+                    "diferenca": float(estimativa),
+                    "ic95_inferior": inferior,
+                    "ic95_superior": superior,
+                    "ic_exclui_zero": bool(inferior > 0 or superior < 0),
+                    "n_amostras": n,
+                    "n_bootstrap": n_bootstrap,
+                    "semente": semente,
+                }
+            )
+    return pd.DataFrame(linhas)

@@ -81,17 +81,10 @@ def marcar_nao_definidas(df_metricas: pd.DataFrame) -> pd.DataFrame:
     return resultado
 
 
-def media_por_modelo(
-    df_metricas: pd.DataFrame, ordem_modelos: list[str], somente_com_positivos: bool = True
-) -> pd.DataFrame:
-    """Média simples (sem pesos) das métricas por modelo.
-
-    Com somente_com_positivos=True, só entram as categorias que têm ao menos um
-    "1" no gabarito. Com False, entram todas (a média antiga, "com GP7").
-    """
-    base = df_metricas
-    if somente_com_positivos:
-        base = df_metricas[df_metricas["n_positivos_gabarito"] > 0]
+def media_por_modelo(df_metricas: pd.DataFrame, ordem_modelos: list[str]) -> pd.DataFrame:
+    """Média simples (sem pesos) das métricas por modelo, só nas categorias que
+    têm ao menos um "1" no gabarito (GP7 fica de fora, pois é N/A)."""
+    base = df_metricas[df_metricas["n_positivos_gabarito"] > 0]
     return base.groupby("modelo")[COLUNAS_METRICAS].mean().reindex(ordem_modelos)
 
 

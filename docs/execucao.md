@@ -23,19 +23,54 @@ e o modelo usa a amostragem padrão. Por isso o Claude **não é determinístico
 novo pode dar respostas diferentes. Gemini e OpenAI usam `temperature=0`, que reduz mas
 não garante respostas idênticas entre execuções.
 
+**Nota 3 (modelos de níveis diferentes).** O `claude-sonnet-5` é um modelo de nível superior
+aos outros dois (`gemini-3.1-flash-lite` e `gpt-4o-mini` são versões menores e mais baratas
+das respectivas empresas). Além disso, o Claude roda sem temperatura 0 e sem JSON forçado. A
+comparação é, portanto, entre **essas configurações**, e não entre "o melhor modelo de cada
+empresa". Isso deve constar nas limitações do TCC.
+
 ## Comum aos três modelos
 
 - **Prompt:** `montar_prompt()` em `src/prompts.py` — definição de cada GP, um exemplo
-  positivo e um negativo por categoria, e pedido de resposta só em JSON. É o mesmo texto
+  positivo e um negativo por categoria, e pedido de resposta só em JSON (origem detalhada na
+  seção "Origem do prompt", abaixo). É o mesmo texto
   para os três modelos. O histórico do git tem uma única versão desse arquivo
   (commit `e6fd394`, 2026-09-04); não dá para provar pelo git se havia alterações não
   commitadas quando cada modelo rodou. Os arquivos `*_prompt_antigo.csv` são de um teste
-  com prompt anterior (10 linhas) e não entram na análise.
+  com prompt anterior (10 linhas) e não entram na análise. Em novembro de 2026,
+  `src/prompts.py` ganhou uma segunda versão (`"revisado"`, para o experimento complementar);
+  a versão `"original"`, que é o padrão, continua gerando exatamente o mesmo texto (conferido
+  por hash nos 1000 feedbacks).
 - **Uma chamada por feedback**, independente das outras (sem histórico de conversa),
   em sequência, com pausa de 1 s entre chamadas.
 - **Tentativas:** até 3 por feedback (5 s de espera entre elas) em caso de erro de API.
   Resposta mal formatada **não** gera nova tentativa.
-- **Dataset:** `data/raw/dataset.csv`, 1000 feedbacks com o gabarito humano.
+- **Dataset:** `data/raw/dataset.csv`, 1000 feedbacks com o gabarito humano, anotado por
+  especialistas: dois anotadores (concordância κ = 0,43 nas boas práticas, antes do consenso)
+  e os casos de divergência resolvidos por outros dois especialistas (CAVALCANTI et al., 2023).
+  O arquivo também traz as colunas FT, FP, FR e FS (níveis de Hattie & Timperley), que **não
+  são usadas**: por decisão do orientador, o trabalho avalia só as boas práticas (GP1–GP7).
+
+## Origem do prompt
+
+- **Definições e exemplos positivos:** copiados do guia de anotação "Pontos de avaliação do
+  feedback" (documento Word, 2018), usado na anotação do dataset. **PREENCHER:** autor e forma
+  de citação do guia (confirmar com o orientador).
+- **Exemplos negativos** ("Exemplo que NÃO conta como…"): **não estão no guia**; foram
+  elaborados pela autora. O de GP6 ("O trabalho tem problemas de formatação.") vai contra a
+  forma como os anotadores aplicaram GP6 (veja `docs/prompt_revisado.md`).
+- **Exemplos que estão no próprio dataset avaliado:** o exemplo positivo de GP3 é o feedback
+  ID 9361 (no gabarito: GP3 = 0, GP5 = 1, GP6 = 1) e o exemplo positivo de GP6 é o ID 13628
+  (no gabarito: GP1, GP3, GP5 e GP6 = 1). Os demais exemplos não aparecem no dataset. O impacto
+  de manter esses 2 feedbacks na avaliação é desprezível:
+
+| Modelo | Métrica (média GP1–GP6) | Com os 1000 | Sem os IDs 9361 e 13628 | Diferença |
+|---|---|---|---|---|
+| Claude | F1 / MCC / Kappa | 0,437 / 0,354 / 0,321 | 0,436 / 0,353 / 0,320 | −0,001 / −0,001 / −0,001 |
+| Gemini | F1 / MCC / Kappa | 0,485 / 0,363 / 0,323 | 0,485 / 0,363 / 0,322 | −0,001 / 0,000 / 0,000 |
+| OpenAI | F1 / MCC / Kappa | 0,470 / 0,384 / 0,358 | 0,470 / 0,385 / 0,359 | 0,000 / +0,001 / +0,001 |
+
+  Por isso, a análise principal mantém os 1000 feedbacks.
 
 ## Datas de geração
 
@@ -77,6 +112,7 @@ Gemini e OpenAI não tiveram esse problema (CSVs idênticos entre o commit de 04
 | Métricas | Acurácia, precisão, recall, F1, MCC e Kappa de Cohen (scikit-learn 1.8.0), por categoria |
 | Resumo geral | Média simples das categorias **com positivos no gabarito** (GP1–GP6); GP7 não tem nenhum positivo e fica como N/A |
 | Intervalo de confiança | Bootstrap percentil de 95%, **1000 reamostragens**, semente **42** (por categoria: `default_rng([42, índice da categoria])`), para F1, MCC e Kappa — `scripts/calcular_ic95.py` → `data/processed/metricas_ic95.csv` |
+| IC da diferença entre modelos | Bootstrap **pareado** (os mesmos feedbacks sorteados para os dois modelos), 1000 reamostragens, semente 42, para F1, MCC e Kappa, por categoria e na média GP1–GP6 — `scripts/calcular_ic95_diferencas.py` → `data/processed/diferencas_ic95.csv`. Se o intervalo contém 0, não há evidência de diferença |
 | Casos indefinidos | Precisão/recall/F1 indefinidos valem 0 (`zero_division=0`); MCC e Kappa indefinidos valem 0 |
 | Python | 3.14.5 |
 
