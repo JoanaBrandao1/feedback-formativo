@@ -19,7 +19,7 @@ comparar o desempenho dos três modelos nessa tarefa.
 | `src/modelos.py` | Registro central dos 3 modelos (id, nome de exibição, cor no gráfico) |
 | `src/prompts.py` | Prompt de classificação e o parser que extrai GP1-GP7 da resposta do modelo |
 | `src/metricas.py` | Cálculo de acurácia/precisão/recall/F1 comparando previsões com o gabarito |
-| `src/intervalos_confianca.py` | Intervalo de confiança de 95% (bootstrap) para F1, MCC e Kappa |
+| `src/intervalos_confianca.py` | Intervalo de confiança de 95% (bootstrap) para F1, MCC e Kappa, de cada modelo e da diferença entre pares de modelos |
 | `scripts/gerar_respostas.py` | Chama os 3 modelos e salva os resultados (retoma de onde parou se for interrompido) |
 | `scripts/calcular_ic95.py` | Calcula os intervalos de confiança a partir dos CSVs existentes (sem API) |
 | `scripts/teste_consistencia.py` | Mede a variação do Claude entre duas execuções (por padrão só mostra o plano e o custo) |
@@ -28,6 +28,7 @@ comparar o desempenho dos três modelos nessa tarefa.
 | `data/raw/dataset.csv` | Dataset com o gabarito humano (1000 feedbacks) |
 | `data/processed/respostas_*.csv` | Saída de `gerar_respostas.py` |
 | `data/processed/metricas_ic95.csv` | Saída de `calcular_ic95.py` (estimativa e IC 95% por modelo, categoria e métrica) |
+| `data/processed/diferencas_ic95.csv` | Saída de `calcular_ic95.py` (diferença A − B e IC 95% por par de modelos, categoria e métrica) |
 
 ## Como rodar
 
@@ -78,9 +79,10 @@ pra sempre refletir o prompt mais recente.
 python scripts/calcular_ic95.py
 ```
 
-Lê os CSVs que já existem e grava `data/processed/metricas_ic95.csv`
-(bootstrap com 1000 reamostragens e semente fixa; não chama nenhuma API). O app
-mostra esse arquivo se ele existir.
+Lê os CSVs que já existem e grava `data/processed/metricas_ic95.csv` (IC de
+cada modelo) e `data/processed/diferencas_ic95.csv` (IC da diferença entre
+cada par de modelos, com bootstrap pareado). Usa 1000 reamostragens e semente
+fixa, e não chama nenhuma API. O app mostra esses arquivos se eles existirem.
 
 ### 3. Abrir o app de comparação
 
@@ -90,7 +92,8 @@ streamlit run app.py
 
 Abre no navegador (`http://localhost:8501`) com o gráfico comparativo por
 categoria, o resumo geral, a tabela de métricas detalhadas (com o número de
-positivos no gabarito), os intervalos de confiança, a contagem de falhas de
+positivos no gabarito), os intervalos de confiança, o intervalo da diferença
+entre os modelos (para dizer se um é significativamente melhor), a contagem de falhas de
 parsing, o resultado do teste de consistência do Claude (se já tiver sido
 rodado) e as respostas de cada modelo no formato do dataset original. Por
 padrão mostra os resultados da rodada completa; a caixinha **"Usar resultados

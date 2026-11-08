@@ -77,6 +77,7 @@ Gemini e OpenAI não tiveram esse problema (CSVs idênticos entre o commit de 04
 | Métricas | Acurácia, precisão, recall, F1, MCC e Kappa de Cohen (scikit-learn 1.8.0), por categoria |
 | Resumo geral | Média simples das categorias **com positivos no gabarito** (GP1–GP6); GP7 não tem nenhum positivo e fica como N/A |
 | Intervalo de confiança | Bootstrap percentil de 95%, **1000 reamostragens**, semente **42** (por categoria: `default_rng([42, índice da categoria])`), para F1, MCC e Kappa — `scripts/calcular_ic95.py` → `data/processed/metricas_ic95.csv` |
+| Diferença entre modelos | IC 95% da diferença A − B para cada par de modelos, por **bootstrap pareado**: as mesmas reamostragens (mesmos feedbacks sorteados) para todos os modelos, e a diferença calculada dentro de cada uma. Só entram os feedbacks que todos os modelos responderam naquela categoria. Diferença significativa = IC não contém 0 (nível de 5%), sem correção para comparações múltiplas (54 intervalos: 3 pares × 6 categorias × 3 métricas) — `scripts/calcular_ic95.py` → `data/processed/diferencas_ic95.csv` |
 | Casos indefinidos | Precisão/recall/F1 indefinidos valem 0 (`zero_division=0`); MCC e Kappa indefinidos valem 0 |
 | Python | 3.14.5 |
 

@@ -27,6 +27,7 @@ RAIZ = Path(__file__).resolve().parent
 CAMINHO_DATASET = RAIZ / "data" / "raw" / "dataset.csv"
 PASTA_PROCESSADOS = RAIZ / "data" / "processed"
 CAMINHO_IC95 = PASTA_PROCESSADOS / "metricas_ic95.csv"  # gerado por scripts/calcular_ic95.py
+CAMINHO_DIFERENCAS = PASTA_PROCESSADOS / "diferencas_ic95.csv"  # gerado por scripts/calcular_ic95.py
 CAMINHO_CONSISTENCIA = PASTA_PROCESSADOS / "consistencia_claude_resumo.csv"  # gerado por scripts/teste_consistencia.py
 
 NOMES_COLUNAS = {
@@ -313,8 +314,8 @@ def secao_intervalos_confianca(modelos_disponiveis: list[str], cores_disponiveis
         f"Para cada modelo e categoria, o conjunto de {df_ic['n_amostras'].max()} feedbacks é reamostrado "
         f"{n_bootstrap} vezes (com reposição, semente fixa {semente}) e a métrica é recalculada a cada vez; "
         "o intervalo vai do percentil 2,5% ao 97,5%. Quanto mais largo o intervalo, menos confiável é a "
-        "estimativa. Se os intervalos de dois modelos se sobrepõem bastante, a diferença entre eles pode ser "
-        "só ruído da amostra."
+        "estimativa. Para dizer se um modelo é melhor que outro, use a seção seguinte (intervalo da diferença): "
+        "intervalos que se sobrepõem aqui não bastam para concluir que não há diferença."
     )
 
     # categorias com poucos positivos → intervalos largos
@@ -363,6 +364,113 @@ def secao_intervalos_confianca(modelos_disponiveis: list[str], cores_disponiveis
         columns={**NOMES_COLUNAS, **{m: f"{NOMES_COLUNAS[m]} [IC 95%]" for m in METRICAS_COM_IC}}
     )
     st.dataframe(tabela, width="stretch", hide_index=True)
+
+
+def grafico_diferencas(df_dif: pd.DataFrame, metrica: str) -> alt.LayerChart:
+    """Ponto = diferença A − B; linha = IC de 95%; linha tracejada no 0."""
+    dados = df_dif[(df_dif["metrica"] == metrica) & df_dif["diferenca"].notna()]
+    ordem = [c for c in CATEGORIAS if c in set(dados["categoria"])]
+    ordem_pares = list(dict.fromkeys(dados["par"]))
+    x = alt.X("categoria:N", title="Categoria", sort=ordem)
+    x_offset = alt.XOffset("par:N", sort=ordem_pares)
+    cor = alt.Color(
+        "significativa:N",
+        title="IC da diferença",
+        scale=alt.Scale(domain=["não contém 0", "contém 0"], range=["#d62728", "#9e9e9e"]),
+    )
+    forma = alt.Shape("par:N", title="Par (A − B)", sort=ordem_pares)
+    tooltip = [
+        alt.Tooltip("categoria:N", title="Categoria"),
+        alt.Tooltip("par:N", title="Par (A − B)"),
+        alt.Tooltip("diferenca:Q", title=f"Diferença de {NOMES_COLUNAS[metrica]}", format="+.3f"),
+        alt.Tooltip("ic95_inferior:Q", title="IC95% inferior", format="+.3f"),
+        alt.Tooltip("ic95_superior:Q", title="IC95% superior", format="+.3f"),
+        alt.Tooltip("conclusao:N", title="Conclusão"),
+        alt.Tooltip("n_positivos_gabarito:Q", title="Positivos no gabarito"),
+    ]
+    y_titulo = f"Diferença de {NOMES_COLUNAS[metrica]} (A − B)"
+    base = alt.Chart(dados)
+    intervalos = base.mark_rule(strokeWidth=2).encode(
+        x=x, xOffset=x_offset, color=cor, tooltip=tooltip,
+        y=alt.Y("ic95_inferior:Q", title=y_titulo), y2="ic95_superior:Q",
+    )
+    pontos = base.mark_point(size=90, filled=True).encode(
+        x=x, xOffset=x_offset, color=cor, shape=forma, tooltip=tooltip,
+        y=alt.Y("diferenca:Q", title=y_titulo),
+    )
+    zero = alt.Chart(pd.DataFrame({"y": [0]})).mark_rule(strokeDash=[4, 4], color="#555").encode(y="y:Q")
+    return (zero + intervalos + pontos).properties(height=420)
+
+
+def secao_diferencas(modelos_disponiveis: list[str], usar_teste: bool):
+    st.subheader("Diferença entre modelos (IC de 95% pareado)")
+    if usar_teste:
+        st.info("As diferenças só existem para a rodada completa. Desmarque \"Usar resultados de teste\" para vê-las.")
+        return
+    if not CAMINHO_DIFERENCAS.exists():
+        st.info("Ainda não há diferenças calculadas. Gere-as (sem chamar nenhuma API) com:\n\n```\npython scripts/calcular_ic95.py\n```")
+        return
+
+    # "N/A" vira NaN na leitura; a coluna "diferenca" vazia já marca esses casos
+    df_dif = pd.read_csv(CAMINHO_DIFERENCAS)
+    df_dif = df_dif[df_dif["modelo_a"].isin(modelos_disponiveis) & df_dif["modelo_b"].isin(modelos_disponiveis)]
+    if df_dif.empty:
+        st.info("É preciso ter resultados de pelo menos dois modelos para comparar.")
+        return
+    df_dif = df_dif.assign(
+        par=df_dif["modelo_a"] + " − " + df_dif["modelo_b"],
+        significativa=(df_dif["ic95_inferior"] > 0) | (df_dif["ic95_superior"] < 0),
+    )
+    df_dif["significativa"] = df_dif["significativa"].map({True: "não contém 0", False: "contém 0"})
+
+    n_bootstrap = int(df_dif["n_bootstrap"].iloc[0])
+    st.caption(
+        "Para afirmar que um modelo é melhor que outro, não basta comparar os intervalos de cada um: o certo é o "
+        "intervalo da **diferença** A − B. Como os modelos responderam os mesmos feedbacks, cada uma das "
+        f"{n_bootstrap} reamostragens sorteia os mesmos feedbacks para todos (bootstrap pareado) e a diferença é "
+        "calculada dentro dela. **Se o intervalo não contém 0**, a diferença é estatisticamente significativa "
+        "(nível de 5%): positivo favorece A, negativo favorece B."
+    )
+
+    metrica_dif = st.selectbox(
+        "Métrica",
+        METRICAS_COM_IC,
+        format_func=lambda m: NOMES_COLUNAS[m],
+        key="metrica_dif",
+    )
+    st.altair_chart(grafico_diferencas(df_dif, metrica_dif), width="stretch")
+
+    def formatar(linha: pd.Series) -> str:
+        if pd.isna(linha["diferenca"]):
+            return "N/A"
+        texto = f"{linha['diferenca']:+.2f}  [{linha['ic95_inferior']:+.2f} ; {linha['ic95_superior']:+.2f}]"
+        if linha["significativa"] == "não contém 0":
+            texto += f"  → {linha['conclusao'].removesuffix(' melhor')}"
+        return texto
+
+    df_dif = df_dif.assign(texto=df_dif.apply(formatar, axis=1))
+    tabela = df_dif.pivot_table(
+        index=["categoria", "par", "n_positivos_gabarito"], columns="metrica", values="texto", aggfunc="first"
+    ).reset_index()
+    tabela["categoria"] = pd.Categorical(tabela["categoria"], categories=CATEGORIAS, ordered=True)
+    tabela["par"] = pd.Categorical(tabela["par"], categories=list(dict.fromkeys(df_dif["par"])), ordered=True)
+    tabela = tabela.sort_values(["categoria", "par"])
+    tabela = tabela[["categoria", "par", "n_positivos_gabarito", *METRICAS_COM_IC]].rename(
+        columns={
+            **NOMES_COLUNAS,
+            "par": "Par (A − B)",
+            **{m: f"Diferença de {NOMES_COLUNAS[m]} [IC 95%]" for m in METRICAS_COM_IC},
+        }
+    )
+    st.dataframe(tabela, width="stretch", hide_index=True)
+
+    n_comparacoes = int(df_dif["diferenca"].notna().sum())
+    st.caption(
+        f"“→ Modelo” indica qual modelo é significativamente melhor naquela métrica. Cuidado com comparações múltiplas: "
+        f"são {n_comparacoes} intervalos no total, e com 95% de confiança cerca de 1 em cada 20 pode excluir o 0 só "
+        "por acaso. Diferenças que se repetem em F1, MCC e Kappa são mais confiáveis do que uma isolada. "
+        "Categorias sem positivos no gabarito aparecem como N/A."
+    )
 
 
 def secao_qualidade_respostas(respostas: dict[str, pd.DataFrame]):
@@ -536,6 +644,7 @@ def main():
     secao_explicacoes()
     secao_tabelas(df_metricas, modelos_disponiveis)
     secao_intervalos_confianca(modelos_disponiveis, cores_disponiveis, usar_teste)
+    secao_diferencas(modelos_disponiveis, usar_teste)
     secao_qualidade_respostas(respostas)
     secao_consistencia()
     secao_respostas_por_modelo(df_gabarito, respostas)

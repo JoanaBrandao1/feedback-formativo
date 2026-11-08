@@ -13,6 +13,8 @@ o sklearn 1000 vezes por célula. As convenções para casos indefinidos são as
 mesmas de `calcular_metricas` (0, em vez de erro).
 """
 
+from itertools import combinations
+
 import numpy as np
 import pandas as pd
 
@@ -53,12 +55,9 @@ def metricas_das_contagens(vp, fp, fn, vn) -> dict[str, np.ndarray]:
     return {"f1": f1, "mcc": mcc, "kappa": kappa}
 
 
-def bootstrap_metricas(
-    y_real: np.ndarray, y_previsto: np.ndarray, rng: np.random.Generator, n_bootstrap: int = N_BOOTSTRAP
-) -> dict[str, np.ndarray]:
-    """Distribuição bootstrap (n_bootstrap valores) de F1, MCC e Kappa."""
-    n = len(y_real)
-    indices = rng.integers(0, n, size=(n_bootstrap, n))
+def metricas_reamostradas(y_real: np.ndarray, y_previsto: np.ndarray, indices: np.ndarray) -> dict[str, np.ndarray]:
+    """F1, MCC e Kappa em cada reamostragem (uma linha de `indices` por reamostragem)."""
+    n = indices.shape[1]
     real = y_real[indices]
     previsto = y_previsto[indices]
 
@@ -67,6 +66,15 @@ def bootstrap_metricas(
     fn = (real & (1 - previsto)).sum(axis=1)
     vn = n - vp - fp - fn
     return metricas_das_contagens(vp, fp, fn, vn)
+
+
+def bootstrap_metricas(
+    y_real: np.ndarray, y_previsto: np.ndarray, rng: np.random.Generator, n_bootstrap: int = N_BOOTSTRAP
+) -> dict[str, np.ndarray]:
+    """Distribuição bootstrap (n_bootstrap valores) de F1, MCC e Kappa."""
+    n = len(y_real)
+    indices = rng.integers(0, n, size=(n_bootstrap, n))
+    return metricas_reamostradas(y_real, y_previsto, indices)
 
 
 def calcular_ic95(
@@ -132,5 +140,92 @@ def calcular_ic95(
                     "observacao": observacao,
                 }
             )
+
+    return pd.DataFrame(linhas)
+
+
+def calcular_ic95_diferencas(
+    previsoes: dict[str, pd.DataFrame],
+    df_verdadeiro: pd.DataFrame,
+    n_bootstrap: int = N_BOOTSTRAP,
+    semente: int = SEMENTE,
+) -> pd.DataFrame:
+    """IC95% da DIFERENÇA de F1, MCC e Kappa entre cada par de modelos.
+
+    previsoes: {nome do modelo: DataFrame de respostas}, na ordem de exibição.
+
+    Para dizer "o modelo A é melhor que o B no GP1" não basta olhar se os
+    intervalos de cada um se sobrepõem: o certo é o intervalo da diferença
+    A − B. Como todos os modelos responderam os MESMOS feedbacks, cada
+    reamostragem sorteia os mesmos feedbacks para todos (bootstrap pareado) e a
+    diferença é calculada dentro de cada reamostragem. Se o intervalo não
+    contém 0, a diferença é estatisticamente significativa (nível de 5%).
+
+    Só entram os feedbacks que todos os modelos responderam naquela categoria,
+    para que a comparação seja sempre sobre o mesmo conjunto. Sem nenhuma falha
+    de parsing, as reamostragens são exatamente as de `calcular_ic95`.
+    """
+    nomes = list(previsoes)
+    comparacao = df_verdadeiro[["ID", *CATEGORIAS]]
+    for nome, df_previsto in previsoes.items():
+        comparacao = comparacao.merge(
+            df_previsto[["ID", *CATEGORIAS]].rename(columns={c: f"{c}|{nome}" for c in CATEGORIAS}), on="ID"
+        )
+
+    margem = (100 - NIVEL_CONFIANCA) / 2
+    linhas = []
+    for posicao, categoria in enumerate(CATEGORIAS):
+        colunas_modelos = [f"{categoria}|{nome}" for nome in nomes]
+        validos = comparacao.dropna(subset=colunas_modelos)
+        if validos.empty:
+            continue
+        y_real = validos[categoria].to_numpy(dtype=np.int64)
+        n_positivos = int(y_real.sum())
+        sem_positivos = n_positivos == 0
+
+        if not sem_positivos:
+            n = len(y_real)
+            todos = np.arange(n)[np.newaxis, :]  # a amostra original, para a estimativa pontual
+            indices = np.random.default_rng([semente, posicao]).integers(0, n, size=(n_bootstrap, n))
+            pontuais, distribuicoes = {}, {}
+            for nome, coluna in zip(nomes, colunas_modelos):
+                y_previsto = validos[coluna].to_numpy(dtype=np.int64)
+                pontuais[nome] = metricas_reamostradas(y_real, y_previsto, todos)
+                distribuicoes[nome] = metricas_reamostradas(y_real, y_previsto, indices)
+
+        for modelo_a, modelo_b in combinations(nomes, 2):
+            for metrica in METRICAS_COM_IC:
+                if sem_positivos:
+                    diferenca = inferior = superior = np.nan
+                    conclusao = "N/A"
+                    observacao = "N/A: nenhum positivo no gabarito"
+                else:
+                    diferenca = float(pontuais[modelo_a][metrica][0] - pontuais[modelo_b][metrica][0])
+                    valores = distribuicoes[modelo_a][metrica] - distribuicoes[modelo_b][metrica]
+                    inferior, superior = (float(v) for v in np.percentile(valores, [margem, 100 - margem]))
+                    if inferior > 0:
+                        conclusao = f"{modelo_a} melhor"
+                    elif superior < 0:
+                        conclusao = f"{modelo_b} melhor"
+                    else:
+                        conclusao = "sem diferença significativa"
+                    observacao = ""
+                linhas.append(
+                    {
+                        "categoria": categoria,
+                        "metrica": metrica,
+                        "modelo_a": modelo_a,
+                        "modelo_b": modelo_b,
+                        "diferenca": diferenca,
+                        "ic95_inferior": inferior,
+                        "ic95_superior": superior,
+                        "conclusao": conclusao,
+                        "n_amostras": len(validos),
+                        "n_positivos_gabarito": n_positivos,
+                        "n_bootstrap": n_bootstrap,
+                        "semente": semente,
+                        "observacao": observacao,
+                    }
+                )
 
     return pd.DataFrame(linhas)
