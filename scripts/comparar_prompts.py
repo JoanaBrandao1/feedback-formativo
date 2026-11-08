@@ -45,7 +45,7 @@ def main():
             print(f"[{info['nome']}] atenção: {falhas['com_gp_nulo']} respostas revisadas com algum GP sem valor (ficam de fora).")
 
         print(f"[{info['nome']}] revisado − original ({N_BOOTSTRAP} reamostragens pareadas, semente {SEMENTE})...")
-        df = diferenca_pareada(df_gabarito, revisado, original, categorias)
+        df = diferenca_pareada(df_gabarito, revisado, original, categorias, "Revisado", "Original")
         df = df.rename(columns={"valor_a": "valor_revisado", "valor_b": "valor_original"})
         df.insert(0, "modelo", info["nome"])
         resultados.append(df)
@@ -59,11 +59,10 @@ def main():
     print(f"\n  -> {len(df_final)} linhas salvas em {CAMINHO_SAIDA}\n")
 
     for _, linha in df_final[df_final["metrica"] == "kappa"].iterrows():
-        conclusao = "diferença" if linha["ic_exclui_zero"] else "sem evidência de diferença"
         print(
             f"{linha['modelo']:7} {linha['categoria']:6} Kappa original {linha['valor_original']:.2f} → revisado "
             f"{linha['valor_revisado']:.2f} | dif. {linha['diferenca']:+.2f} "
-            f"[{linha['ic95_inferior']:+.2f}; {linha['ic95_superior']:+.2f}] → {conclusao}"
+            f"[{linha['ic95_inferior']:+.2f}; {linha['ic95_superior']:+.2f}] → {linha['conclusao']}"
         )
 
 
