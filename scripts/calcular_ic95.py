@@ -1,19 +1,3 @@
-"""
-Calcula o intervalo de confiança de 95% (bootstrap, 1000 reamostragens, semente
-fixa) de F1, MCC e Kappa a partir dos CSVs que JÁ existem em data/processed/
-(respostas_<modelo>.csv):
-
-- de cada modelo em cada categoria -> data/processed/metricas_ic95.csv
-- da DIFERENÇA entre cada par de modelos em cada categoria (bootstrap pareado)
-  -> data/processed/diferencas_ic95.csv
-
-Não chama nenhuma API e não altera nenhum outro arquivo (o app lê esses dois
-CSVs para mostrar os intervalos).
-
-Uso:
-    python scripts/calcular_ic95.py
-"""
-
 import sys
 from pathlib import Path
 
@@ -59,7 +43,7 @@ def main():
         print("Só um modelo disponível: não há diferenças entre modelos para calcular.")
         return
 
-    print("Calculando IC95% das diferenças entre pares de modelos (bootstrap pareado)...")
+    print(f"Calculando IC95% das diferenças entre pares de modelos ({N_BOOTSTRAP} reamostragens pareadas)...")
     df_diferencas = calcular_ic95_diferencas(previsoes, df_gabarito)
     df_diferencas.to_csv(CAMINHO_SAIDA_DIFERENCAS, index=False)
     print(f"  -> {len(df_diferencas)} linhas salvas em {CAMINHO_SAIDA_DIFERENCAS}")

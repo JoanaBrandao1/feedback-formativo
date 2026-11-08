@@ -33,15 +33,10 @@ que **não são usadas**: o trabalho avalia só as boas práticas.
 | `docs/execucao.md` | Como as respostas foram geradas (modelos, temperatura, JSON, datas, origem do prompt, estatística) |
 | `docs/prompt_revisado.md` | Experimento complementar do prompt revisado |
 | `data/raw/dataset.csv` | Dataset com o gabarito humano (1000 feedbacks) |
-<<<<<<< HEAD
-| `data/processed/respostas_*.csv` | Saída de `gerar_respostas.py` |
-| `data/processed/metricas_ic95.csv` | Saída de `calcular_ic95.py` (estimativa e IC 95% por modelo, categoria e métrica) |
-| `data/processed/diferencas_ic95.csv` | Saída de `calcular_ic95.py` (diferença A − B e IC 95% por par de modelos, categoria e métrica) |
-=======
 | `data/splits/` | IDs de desenvolvimento e de teste (saída de `dividir_dados.py`) |
-| `data/processed/respostas_<modelo>.csv` | Respostas do experimento principal |
-| `data/processed/metricas_ic95.csv`, `diferencas_ic95.csv` | Intervalos de confiança (saídas dos scripts de IC) |
->>>>>>> 130aa4bddc1abb2ed123e6fcd710bf1f9e6ff2c5
+| `data/processed/respostas_<modelo>.csv` | Respostas do experimento principal (saída de `gerar_respostas.py`) |
+| `data/processed/metricas_ic95.csv` | Saída de `calcular_ic95.py`: estimativa e IC 95% por modelo, categoria e métrica |
+| `data/processed/diferencas_ic95.csv` | Saída de `calcular_ic95.py`: diferença A − B e IC 95% por par de modelos, categoria e métrica (com a linha "Média" de GP1–GP6) |
 
 ## Como rodar
 
@@ -87,20 +82,18 @@ rodada completa. Toda vez que rodar com `--n`, começa do zero.
 ### 2. Calcular os intervalos de confiança (sem custo)
 
 ```bash
-python scripts/calcular_ic95.py              # IC 95% de cada modelo → metricas_ic95.csv
-python scripts/calcular_ic95_diferencas.py   # IC 95% da diferença entre modelos → diferencas_ic95.csv
+python scripts/calcular_ic95.py   # → metricas_ic95.csv e diferencas_ic95.csv
 ```
 
-<<<<<<< HEAD
-Lê os CSVs que já existem e grava `data/processed/metricas_ic95.csv` (IC de
-cada modelo) e `data/processed/diferencas_ic95.csv` (IC da diferença entre
-cada par de modelos, com bootstrap pareado). Usa 1000 reamostragens e semente
-fixa, e não chama nenhuma API. O app mostra esses arquivos se eles existirem.
-=======
-Bootstrap com 1000 reamostragens e semente fixa; não chamam nenhuma API. O
-segundo responde "um modelo é melhor que o outro?": se o intervalo da
-diferença contém 0, não há evidência de diferença.
->>>>>>> 130aa4bddc1abb2ed123e6fcd710bf1f9e6ff2c5
+Lê os CSVs que já existem e grava os dois arquivos acima. Bootstrap com 1000
+reamostragens e semente fixa; não chama nenhuma API. O app mostra esses
+arquivos se eles existirem.
+
+O arquivo de diferenças responde "um modelo é melhor que o outro?". Como os
+modelos responderam os mesmos feedbacks, cada reamostragem sorteia os mesmos
+feedbacks para os dois modelos (bootstrap pareado) e a diferença é calculada
+dentro dela. Se o intervalo da diferença contém 0, não há evidência de
+diferença; se não contém, a coluna `conclusao` diz qual modelo foi melhor.
 
 ### 3. Abrir o app de comparação
 
@@ -108,17 +101,6 @@ diferença contém 0, não há evidência de diferença.
 streamlit run app.py
 ```
 
-<<<<<<< HEAD
-Abre no navegador (`http://localhost:8501`) com o gráfico comparativo por
-categoria, o resumo geral, a tabela de métricas detalhadas (com o número de
-positivos no gabarito), os intervalos de confiança, o intervalo da diferença
-entre os modelos (para dizer se um é significativamente melhor), a contagem de falhas de
-parsing, o resultado do teste de consistência do Claude (se já tiver sido
-rodado) e as respostas de cada modelo no formato do dataset original. Por
-padrão mostra os resultados da rodada completa; a caixinha **"Usar resultados
-de teste"** na barra lateral troca para mostrar os `*_teste.csv` (gerados com
-`--n`).
-=======
 Abre no navegador (`http://localhost:8501`) com:
 - o gráfico comparativo por categoria;
 - o resumo geral;
@@ -130,7 +112,6 @@ Abre no navegador (`http://localhost:8501`) com:
 - as respostas de cada modelo.
 
 A caixinha **"Usar resultados de teste"** na barra lateral mostra os `*_teste.csv` (gerados com `--n`).
->>>>>>> 130aa4bddc1abb2ed123e6fcd710bf1f9e6ff2c5
 
 O **resumo geral** é a média das categorias que têm positivos no gabarito
 (GP1–GP6). GP7 não tem nenhum positivo e aparece como **N/A** nas métricas que
@@ -235,6 +216,9 @@ O código não tem comentários; as decisões de implementação estão registra
   conjunto de feedbacks, usado para A, para B e para todas as categorias; a diferença A − B é
   calculada dentro de cada reamostragem, o que permite também a diferença na média GP1–GP6. Só
   entram feedbacks com resposta válida em A e em B. Os arrays são `int8` para economizar memória.
+  A coluna `conclusao` diz "A melhor", "B melhor" ou "sem diferença significativa".
+  `calcular_ic95_diferencas` aplica isso a cada par de modelos; `comparar_prompts.py` aplica ao
+  par prompt revisado × original.
 
 ### Divisão dos dados (`scripts/dividir_dados.py`)
 
@@ -258,6 +242,8 @@ O código não tem comentários; as decisões de implementação estão registra
 - Categorias com menos de 50 positivos no gabarito recebem aviso de intervalo largo. No teste de
   consistência, categorias com menos de 5 positivos nas duas execuções ficam em cinza, porque a
   concordância ali só mostra que as duas marcaram 0.
+- O gráfico de diferenças mostra um ponto (A − B) e uma linha (IC 95%) por par de modelos; em
+  vermelho quando o intervalo não contém 0.
 - As seções de intervalos, diferenças e comparação de prompts leem os CSVs gerados pelos scripts
   (`metricas_ic95.csv`, `diferencas_ic95.csv`, `comparacao_prompts.csv`) e só aparecem se eles
   existirem.
