@@ -99,9 +99,57 @@ DESCRICOES_CATEGORIAS = {
 }
 
 
-def montar_prompt(texto: str) -> str:
+IDS_EXEMPLOS_REVISADO = {
+    "GP1": {"positivo": 13279, "negativo": 1119},
+    "GP6": {"positivo": 1473, "negativo": 45},
+}
+
+DESCRICOES_CATEGORIAS_REVISADO = {
+    **DESCRICOES_CATEGORIAS,
+    "GP1": {
+        "nome": DESCRICOES_CATEGORIAS["GP1"]["nome"],
+        "definicao": (
+            "O feedback avalia o trabalho em relação à proposta, aos critérios ou às exigências da "
+            "atividade, dizendo se o aluno cumpriu (ou não) o que foi solicitado ou se atingiu o "
+            "objetivo esperado, ou explica/exemplifica como deveria ser um bom desempenho. Apenas "
+            "sugerir algo que poderia ter sido explorado, ou apontar o que faltou, sem se referir à "
+            "proposta ou aos critérios da atividade, NÃO conta como GP1."
+        ),
+        "exemplo_positivo": "O trabalho de vocês cumpriu com o solicitado, porém senti falta da conclusão.",
+        "exemplo_negativo": (
+            "Boa tarde, Vocês poderiam ter explorado mais os princípios de Alvaraz y Sole e os "
+            "relacionados pedagogicamente com as práticas observadas em sala de aula."
+        ),
+    },
+    "GP6": {
+        "nome": DESCRICOES_CATEGORIAS["GP6"]["nome"],
+        "definicao": (
+            "O feedback aponta erros, falhas ou o que faltou no trabalho (no conteúdo, na estrutura ou "
+            "na formatação), ou indica o que o aluno deve fazer ou melhorar, dando a ele a informação "
+            "necessária para reduzir a distância entre o desempenho atual e o desejado. Conta mesmo "
+            "quando o feedback só aponta o que faltou, sem dizer explicitamente o próximo passo. "
+            "Elogios sem nenhuma indicação de melhoria e avisos apenas administrativos (por exemplo, "
+            "nome da equipe ou anexo não enviado) NÃO contam."
+        ),
+        "exemplo_positivo": (
+            "No seu trabalho faltou o sumário, introdução, contextualização da escola, conclusão, "
+            "referências e as fichas de comprovação de estágio."
+        ),
+        "exemplo_negativo": "Muito bom seu texto, foi construído com uma linguagem direta e coerente.",
+    },
+}
+
+VERSOES_PROMPT = {
+    "original": DESCRICOES_CATEGORIAS,
+    "revisado": DESCRICOES_CATEGORIAS_REVISADO,
+}
+
+
+def montar_prompt(texto: str, versao: str = "original") -> str:
+    if versao not in VERSOES_PROMPT:
+        raise ValueError(f"versão de prompt desconhecida: {versao!r} (use {list(VERSOES_PROMPT)})")
     blocos = []
-    for cat, info in DESCRICOES_CATEGORIAS.items():
+    for cat, info in VERSOES_PROMPT[versao].items():
         blocos.append(
             f"{cat} - {info['nome']}\n"
             f"Definição: {info['definicao']}\n"
@@ -129,14 +177,7 @@ Responda APENAS em JSON válido, sem texto adicional antes ou depois, no formato
 
 
 def parse_resposta(resposta: str) -> dict[str, int | None]:
-    """Extrai os valores 0/1 de cada categoria GP a partir da resposta do modelo.
-
-    Tenta primeiro interpretar como JSON (formato esperado). Se falhar,
-    usa regex como fallback. Retorna None para uma categoria quando o
-    modelo não respondeu no formato esperado.
-    """
     texto = resposta.strip()
-    # remove possíveis fences de markdown (```json ... ```)
     texto = re.sub(r"^```(?:json)?\s*|\s*```$", "", texto, flags=re.MULTILINE).strip()
 
     try:
@@ -152,7 +193,6 @@ def parse_resposta(resposta: str) -> dict[str, int | None]:
     except (json.JSONDecodeError, TypeError):
         pass
 
-    # Fallback: regex sobre o texto bruto da resposta
     valores: dict[str, int | None] = {}
     for categoria in CATEGORIAS:
         match = re.search(rf'"?{categoria}"?\s*:\s*([01])', resposta)
@@ -161,7 +201,6 @@ def parse_resposta(resposta: str) -> dict[str, int | None]:
 
 
 if __name__ == "__main__":
-    # Exemplo rápido de uso
     exemplo = (
         "Bom trabalho, mas vocês deveriam ter explorado os princípios de Alvaraz y Soler "
         "e os relacionados com as observações realizadas. Que tal comparar sua resposta "
