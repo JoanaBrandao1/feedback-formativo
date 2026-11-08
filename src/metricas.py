@@ -15,18 +15,10 @@ from src.prompts import CATEGORIAS
 
 COLUNAS_METRICAS = ["acuracia", "precisao", "recall", "f1", "mcc", "kappa"]
 
-# Sem nenhum "1" no gabarito, estas métricas não têm o que medir (a acurácia
-# continua definida, mas só reflete o quanto o modelo marcou "0").
 METRICAS_SEM_POSITIVOS_INDEFINIDAS = ["precisao", "recall", "f1", "mcc", "kappa"]
 
 
 def calcular_metricas(df_previsto: pd.DataFrame, df_verdadeiro: pd.DataFrame) -> pd.DataFrame:
-    """Compara as previsões de um modelo com o gabarito humano do dataset,
-    categoria por categoria (GP1-GP7).
-
-    df_previsto: colunas ID, GP1..GP7 (0/1/None) — saída de scripts/gerar_respostas.py
-    df_verdadeiro: colunas ID, GP1..GP7 (0/1) — o dataset original (gabarito humano)
-    """
     comparacao = df_verdadeiro[["ID", *CATEGORIAS]].merge(
         df_previsto[["ID", *CATEGORIAS]], on="ID", suffixes=("_real", "_previsto")
     )
@@ -42,9 +34,6 @@ def calcular_metricas(df_previsto: pd.DataFrame, df_verdadeiro: pd.DataFrame) ->
         y_real = validos[col_real].astype(int)
         y_previsto = validos[col_previsto].astype(int)
 
-        # MCC e Kappa ficam indefinidos (0/0) quando real e previsto são
-        # constantes (ex.: categoria sem nenhum "1" e modelo também só prevê
-        # "0"); nesse caso não há o que medir, então tratamos como 0.
         with np.errstate(invalid="ignore", divide="ignore"):
             mcc = matthews_corrcoef(y_real, y_previsto)
             kappa = cohen_kappa_score(y_real, y_previsto)
@@ -68,39 +57,18 @@ def calcular_metricas(df_previsto: pd.DataFrame, df_verdadeiro: pd.DataFrame) ->
 
 
 def marcar_nao_definidas(df_metricas: pd.DataFrame) -> pd.DataFrame:
-    """Devolve uma cópia em que precisão, recall, F1, MCC e Kappa viram NaN
-    (= "N/A") nas categorias sem nenhum positivo no gabarito.
-
-    `calcular_metricas` continua devolvendo 0 nesses casos (convenção do
-    sklearn); esta função é só para a apresentação, para não confundir
-    "não dá para medir" com "o modelo errou tudo".
-    """
     resultado = df_metricas.copy()
     sem_positivos = resultado["n_positivos_gabarito"] == 0
     resultado.loc[sem_positivos, METRICAS_SEM_POSITIVOS_INDEFINIDAS] = np.nan
     return resultado
 
 
-def media_por_modelo(
-    df_metricas: pd.DataFrame, ordem_modelos: list[str], somente_com_positivos: bool = True
-) -> pd.DataFrame:
-    """Média simples (sem pesos) das métricas por modelo.
-
-    Com somente_com_positivos=True, só entram as categorias que têm ao menos um
-    "1" no gabarito. Com False, entram todas (a média antiga, "com GP7").
-    """
-    base = df_metricas
-    if somente_com_positivos:
-        base = df_metricas[df_metricas["n_positivos_gabarito"] > 0]
+def media_por_modelo(df_metricas: pd.DataFrame, ordem_modelos: list[str]) -> pd.DataFrame:
+    base = df_metricas[df_metricas["n_positivos_gabarito"] > 0]
     return base.groupby("modelo")[COLUNAS_METRICAS].mean().reindex(ordem_modelos)
 
 
 def resumir_falhas(df_previsto: pd.DataFrame) -> dict[str, int]:
-    """Conta respostas que falharam ou ficaram incompletas em um CSV de respostas.
-
-    - resposta_vazia: a API falhou nas tentativas e nada foi salvo;
-    - com_gp_nulo: pelo menos um GP ficou sem valor 0/1 (inclui as vazias).
-    """
     if "resposta_bruta" in df_previsto.columns:
         vazia = df_previsto["resposta_bruta"].fillna("").astype(str).str.strip() == ""
     else:
@@ -113,12 +81,6 @@ def resumir_falhas(df_previsto: pd.DataFrame) -> dict[str, int]:
 
 
 def comparar_execucoes(df_original: pd.DataFrame, df_nova: pd.DataFrame) -> pd.DataFrame:
-    """Mede o quanto duas execuções do MESMO modelo concordam entre si, por GP.
-
-    Devolve uma linha por categoria (concordância em % e Kappa de Cohen) mais
-    uma linha "TODAS" com o % de feedbacks em que os 7 GP saíram idênticos.
-    O Kappa fica NaN quando é indefinido (ex.: as duas execuções só marcaram "0").
-    """
     comparacao = df_original[["ID", *CATEGORIAS]].merge(
         df_nova[["ID", *CATEGORIAS]], on="ID", suffixes=("_original", "_nova")
     )

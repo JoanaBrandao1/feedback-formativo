@@ -1,11 +1,3 @@
-"""
-App de comparação de métricas entre os modelos (Claude, Gemini, OpenAI) na
-tarefa de classificar feedbacks educacionais nas categorias GP1-GP7.
-
-Uso:
-    streamlit run app.py
-"""
-
 from pathlib import Path
 
 import altair as alt
@@ -44,19 +36,12 @@ NOMES_COLUNAS = {
     "n_positivos_previstos": "Nº de positivos previstos pelo modelo",
 }
 
-# f1/acuracia/precisao/recall vão de 0 a 1 (viram "nota" de 0 a 10 no gráfico);
-# mcc/kappa vão de -1 a 1 (0 = concordância ao acaso), então o gráfico exibe o
-# valor bruto em vez de uma "nota".
 METRICAS_0_A_1 = ["f1", "acuracia", "precisao", "recall"]
 METRICAS_MENOS1_A_1 = ["mcc", "kappa"]
 METRICAS_COM_IC = ["f1", "mcc", "kappa"]
 
-# Abaixo disso, o gabarito tem tão poucos positivos que as métricas daquela
-# categoria são muito instáveis (intervalos de confiança largos).
 LIMITE_POUCOS_POSITIVOS = 50
 
-# No teste de consistência (amostra pequena), com menos positivos que isso em
-# ambas as execuções a concordância só reflete o "0" e não diz nada sobre a categoria.
 LIMITE_POUCOS_POSITIVOS_CONSISTENCIA = 5
 
 st.set_page_config(page_title="Comparação de modelos - Feedback Formativo", layout="wide")
@@ -87,7 +72,6 @@ def calcular_todas_metricas(respostas: dict[str, pd.DataFrame], df_gabarito: pd.
 
 
 def rotulo_categorias(categorias: list[str]) -> str:
-    """["GP1", ..., "GP6"] -> "GP1–GP6"; se não forem consecutivas, lista todas."""
     if not categorias:
         return ""
     numeros = [CATEGORIAS.index(c) for c in categorias]
@@ -102,8 +86,6 @@ def grafico_por_categoria(df_metricas: pd.DataFrame, metrica: str, modelos_dispo
     else:
         transform, dominio, titulo_eixo = f"datum.{metrica} * 10", [0, 10], f"{metrica.capitalize()} (0 a 10)"
 
-    # Categoria sem positivos no gabarito: a métrica não existe (N/A), então a
-    # barra some e o rótulo do eixo avisa, em vez de desenhar uma barra "0".
     df_grafico = df_metricas
     if metrica in METRICAS_SEM_POSITIVOS_INDEFINIDAS:
         df_grafico = marcar_nao_definidas(df_metricas)
@@ -147,7 +129,6 @@ def grafico_por_categoria(df_metricas: pd.DataFrame, metrica: str, modelos_dispo
 
 
 def grafico_ic95(df_ic: pd.DataFrame, metrica: str, modelos_disponiveis: list[str], cores_disponiveis: list[str]) -> alt.LayerChart:
-    """Barras com a estimativa + linha vertical com o IC de 95% (bootstrap)."""
     dados = df_ic[(df_ic["metrica"] == metrica) & df_ic["estimativa"].notna()]
     ordem = [c for c in CATEGORIAS if c in set(dados["categoria"])]
     dominio = [-1, 1] if metrica in METRICAS_MENOS1_A_1 else [0, 1]
@@ -194,8 +175,8 @@ def secao_explicacoes():
         with st.expander("O que significa cada métrica (Acurácia, Precisão, Recall, F1, MCC, Kappa)"):
             st.markdown(
                 """
-Para cada categoria (ex.: GP1), a IA responde 0 ou 1 e comparamos com o que o
-professor marcou no gabarito. Isso dá 4 possibilidades: **VP** (verdadeiro
+Para cada categoria (ex.: GP1), a IA responde 0 ou 1 e comparamos com o que os
+especialistas marcaram no gabarito. Isso dá 4 possibilidades: **VP** (verdadeiro
 positivo: os dois marcaram 1), **VN** (verdadeiro negativo: os dois marcaram
 0), **FP** (falso positivo: a IA marcou 1, mas o gabarito era 0) e **FN**
 (falso negativo: a IA marcou 0, mas o gabarito era 1).
@@ -243,9 +224,7 @@ marcar a categoria algumas vezes, todas essas marcações são falsos positivos
 categoria, já que ela nunca está presente. A **Acurácia** continua aparecendo,
 mas fica enganosamente alta (perto de 1) só porque a IA marca "0" quase
 sempre — por isso ela vem com uma nota. Pelo mesmo motivo, o resumo geral usa
-só as categorias que têm positivos no gabarito; a média que inclui essas
-categorias (contando as métricas como 0) fica numa tabela à parte, só como
-referência.
+só as categorias que têm positivos no gabarito.
                 """
             )
 
@@ -256,7 +235,6 @@ def categorias_sem_positivos(df_metricas: pd.DataFrame) -> list[str]:
 
 
 def nota_sem_positivos(df_metricas: pd.DataFrame, sem_positivos: list[str]) -> str:
-    """Texto que explica por que algumas categorias aparecem como N/A."""
     partes = []
     for categoria in sem_positivos:
         previstos = df_metricas[df_metricas["categoria"] == categoria].set_index("modelo")["n_positivos_previstos"]
@@ -278,15 +256,11 @@ def secao_tabelas(df_metricas: pd.DataFrame, modelos_disponiveis: list[str]):
     st.subheader(f"Resumo geral (média das categorias com positivos no gabarito: {rotulo_categorias(com_positivos)})")
     resumo = media_por_modelo(df_metricas, modelos_disponiveis).round(2)
     st.dataframe(resumo.rename(columns=NOMES_COLUNAS), width="stretch")
-
     if sem_positivos:
-        with st.expander(f"Média com {', '.join(sem_positivos)} (referência)"):
-            st.caption(
-                f"Média antiga, de todas as categorias, contando {', '.join(sem_positivos)} com precisão, recall, "
-                "F1, MCC e Kappa = 0. Não é comparável com a tabela acima e é mostrada só como referência."
-            )
-            resumo_com_todas = media_por_modelo(df_metricas, modelos_disponiveis, somente_com_positivos=False).round(2)
-            st.dataframe(resumo_com_todas.rename(columns=NOMES_COLUNAS), width="stretch")
+        st.caption(
+            f"{', '.join(sem_positivos)} fica fora da média: sem nenhum positivo no gabarito, as métricas dela não "
+            "estão definidas (N/A)."
+        )
 
     st.subheader("Métricas detalhadas por categoria")
     colunas = ["modelo", "categoria", *COLUNAS_METRICAS, "n_amostras", "n_positivos_gabarito", "n_positivos_previstos"]
@@ -318,7 +292,6 @@ def secao_intervalos_confianca(modelos_disponiveis: list[str], cores_disponiveis
         "intervalos que se sobrepõem aqui não bastam para concluir que não há diferença."
     )
 
-    # categorias com poucos positivos → intervalos largos
     por_categoria = (
         df_ic[df_ic["metrica"] == "f1"]
         .groupby("categoria")
@@ -366,6 +339,7 @@ def secao_intervalos_confianca(modelos_disponiveis: list[str], cores_disponiveis
     st.dataframe(tabela, width="stretch", hide_index=True)
 
 
+<<<<<<< HEAD
 def grafico_diferencas(df_dif: pd.DataFrame, metrica: str) -> alt.LayerChart:
     """Ponto = diferença A − B; linha = IC de 95%; linha tracejada no 0."""
     dados = df_dif[(df_dif["metrica"] == metrica) & df_dif["diferenca"].notna()]
@@ -471,6 +445,63 @@ def secao_diferencas(modelos_disponiveis: list[str], usar_teste: bool):
         "por acaso. Diferenças que se repetem em F1, MCC e Kappa são mais confiáveis do que uma isolada. "
         "Categorias sem positivos no gabarito aparecem como N/A."
     )
+=======
+def tabela_diferencas(df_dif: pd.DataFrame, colunas_par: list[str], metrica: str) -> pd.DataFrame:
+    dados = df_dif[df_dif["metrica"] == metrica].copy()
+    dados["Diferença [IC 95%]"] = dados.apply(
+        lambda l: f"{l['diferenca']:+.2f}  [{l['ic95_inferior']:+.2f} ; {l['ic95_superior']:+.2f}]", axis=1
+    )
+    dados["Conclusão"] = dados["ic_exclui_zero"].map(
+        lambda exclui: "diferença" if exclui else "sem evidência de diferença"
+    )
+    ordem = [*CATEGORIAS, "Média"]
+    dados["categoria"] = pd.Categorical(dados["categoria"], categories=ordem, ordered=True)
+    dados = dados.sort_values([*colunas_par, "categoria"])
+    return dados[[*colunas_par, "categoria", "valor_a", "valor_b", "Diferença [IC 95%]", "Conclusão"]]
+
+
+def secao_diferencas(usar_teste: bool):
+    st.subheader("Um modelo é melhor que o outro? (IC 95% da diferença)")
+    if usar_teste:
+        st.info("Disponível só para a rodada completa. Desmarque \"Usar resultados de teste\".")
+        return
+    if not CAMINHO_DIFERENCAS.exists():
+        st.info("Ainda não calculado. Gere (sem chamar nenhuma API) com:\n\n```\npython scripts/calcular_ic95_diferencas.py\n```")
+        return
+
+    df_dif = pd.read_csv(CAMINHO_DIFERENCAS)
+    st.caption(
+        "Bootstrap pareado: em cada uma das reamostragens, os dois modelos são avaliados nos MESMOS feedbacks "
+        "sorteados e a diferença (modelo A − modelo B) é calculada ali. **Se o intervalo contém 0, não há "
+        "evidência de diferença entre os dois modelos.** A linha \"Média\" é a média de GP1–GP6."
+    )
+    metrica = st.selectbox("Métrica", METRICAS_COM_IC, format_func=lambda m: NOMES_COLUNAS[m], key="metrica_dif")
+    tabela = tabela_diferencas(df_dif, ["modelo_a", "modelo_b"], metrica).rename(
+        columns={"modelo_a": "Modelo A", "modelo_b": "Modelo B", "categoria": "Categoria", "valor_a": "A", "valor_b": "B"}
+    )
+    st.dataframe(tabela.style.format({"A": "{:.2f}", "B": "{:.2f}"}), width="stretch", hide_index=True)
+
+
+def secao_comparacao_prompts():
+    if not CAMINHO_COMPARACAO_PROMPTS.exists():
+        return
+    st.subheader("Experimento complementar: prompt original × revisado (conjunto de teste)")
+    df_comp = pd.read_csv(CAMINHO_COMPARACAO_PROMPTS).rename(
+        columns={"valor_revisado": "valor_a", "valor_original": "valor_b"}
+    )
+    st.caption(
+        f"Exploratório. O prompt revisado muda só a definição e os exemplos de GP1 e GP6, escritos olhando apenas "
+        f"os feedbacks de desenvolvimento; a comparação usa os {int(df_comp['n_amostras'].max())} feedbacks de teste, "
+        "nos quais nenhum dos dois prompts foi ajustado. Diferença = revisado − original (bootstrap pareado). "
+        "Se o intervalo contém 0, não há evidência de que a revisão mudou o desempenho."
+    )
+    metrica = st.selectbox("Métrica", METRICAS_COM_IC, format_func=lambda m: NOMES_COLUNAS[m], key="metrica_prompts")
+    tabela = tabela_diferencas(df_comp, ["modelo"], metrica).rename(
+        columns={"modelo": "Modelo", "categoria": "Categoria", "valor_a": "Revisado", "valor_b": "Original"}
+    )
+    tabela = tabela[["Modelo", "Categoria", "Original", "Revisado", "Diferença [IC 95%]", "Conclusão"]]
+    st.dataframe(tabela.style.format({"Original": "{:.2f}", "Revisado": "{:.2f}"}), width="stretch", hide_index=True)
+>>>>>>> 130aa4bddc1abb2ed123e6fcd710bf1f9e6ff2c5
 
 
 def secao_qualidade_respostas(respostas: dict[str, pd.DataFrame]):
@@ -644,9 +675,14 @@ def main():
     secao_explicacoes()
     secao_tabelas(df_metricas, modelos_disponiveis)
     secao_intervalos_confianca(modelos_disponiveis, cores_disponiveis, usar_teste)
+<<<<<<< HEAD
     secao_diferencas(modelos_disponiveis, usar_teste)
+=======
+    secao_diferencas(usar_teste)
+>>>>>>> 130aa4bddc1abb2ed123e6fcd710bf1f9e6ff2c5
     secao_qualidade_respostas(respostas)
     secao_consistencia()
+    secao_comparacao_prompts()
     secao_respostas_por_modelo(df_gabarito, respostas)
 
 

@@ -1,21 +1,3 @@
-"""
-Teste de consistência do Claude (claude-sonnet-5).
-
-O Claude roda SEM temperature=0 (a API não aceita o parâmetro para esse modelo),
-então a mesma pergunta pode receber respostas diferentes em execuções diferentes.
-Este script mede o quanto: sorteia uma amostra fixa de feedbacks, pede ao Claude
-de novo SÓ para eles e compara com a rodada original (respostas_claude.csv).
-
-Não altera nada que já existe: a nova rodada vai para
-data/processed/consistencia_claude.csv e o resumo para
-data/processed/consistencia_claude_resumo.csv.
-
-Três modos (por padrão NÃO chama a API):
-    python scripts/teste_consistencia.py              # só mostra o plano e o custo estimado
-    python scripts/teste_consistencia.py --executar   # FAZ as chamadas pagas ao Claude
-    python scripts/teste_consistencia.py --comparar   # só compara um CSV já gerado (sem API)
-"""
-
 import argparse
 import sys
 from pathlib import Path
@@ -39,19 +21,15 @@ CAMINHO_RESUMO = PASTA_PROCESSADOS / "consistencia_claude_resumo.csv"
 N_AMOSTRA = 100
 SEMENTE = 42
 
-# --- Estimativa de custo (só informativa) ---------------------------------
-# Preço de referência do claude-sonnet-5 em US$ por milhão de tokens. Confira
-# na página de preços da Anthropic antes de decidir.
 PRECO_ENTRADA_POR_MTOK = 2.00
 PRECO_SAIDA_POR_MTOK = 10.00
-CARACTERES_POR_TOKEN = 3.3  # português; valor baixo de propósito (superestima tokens)
-TOKENS_SAIDA_POR_CHAMADA = 50  # o JSON de resposta tem ~35-45 tokens; sobra um pouco
-TENTATIVAS_MAXIMAS = 3  # gerar_respostas.py tenta até 3 vezes se a API falhar
-SEGUNDOS_POR_CHAMADA = 4  # ~3 s de resposta + 1 s de pausa entre chamadas
+CARACTERES_POR_TOKEN = 3.3
+TOKENS_SAIDA_POR_CHAMADA = 50
+TENTATIVAS_MAXIMAS = 3
+SEGUNDOS_POR_CHAMADA = 4
 
 
 def sortear_ids(df_dataset: pd.DataFrame) -> list[int]:
-    """Os mesmos N_AMOSTRA IDs em qualquer execução (semente fixa)."""
     rng = np.random.default_rng(SEMENTE)
     return sorted(int(i) for i in rng.choice(df_dataset["ID"].to_numpy(), size=N_AMOSTRA, replace=False))
 
@@ -87,14 +65,10 @@ def mostrar_plano(df_amostra: pd.DataFrame) -> None:
 
 
 def executar(df_amostra: pd.DataFrame) -> None:
-    # Importados só aqui: criar o cliente do Claude exige a CLAUDE_API_KEY e este
-    # é o único modo que realmente chama a API.
     from gerar_respostas import avaliar_modelo
     from src import claude_client
 
     assert CAMINHO_NOVA != CAMINHO_ORIGINAL, "a nova rodada nunca pode sobrescrever a original"
-    # avaliar_modelo é o mesmo laço de gerar_respostas.py (mesmo prompt, mesmas
-    # tentativas) e retoma de onde parou se o arquivo já existir.
     avaliar_modelo("claude (consistência)", claude_client, df_amostra, CAMINHO_NOVA)
 
 
@@ -114,7 +88,7 @@ def comparar() -> None:
 
 
 def main():
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser = argparse.ArgumentParser(description="Teste de consistência do Claude (veja o README, seção 4).")
     grupo = parser.add_mutually_exclusive_group()
     grupo.add_argument("--executar", action="store_true", help="faz as chamadas pagas à API do Claude e compara")
     grupo.add_argument("--comparar", action="store_true", help="só compara um CSV já gerado (não chama a API)")
